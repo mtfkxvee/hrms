@@ -19,19 +19,40 @@
 					</header>
 
 					<div class="flex flex-col items-center mt-5 p-4">
-						<!-- Profile Image -->
-						<img
-							v-if="user.data.user_image"
-							class="h-24 w-24 rounded-full object-cover"
-							:src="user.data.user_image"
-							:alt="user.data.first_name"
-						/>
-						<div
-							v-else
-							class="flex items-center justify-center bg-gray-200 uppercase text-gray-600 h-24 w-24 rounded-full object-cover"
+						<!-- Profile Image (ketuk untuk ganti foto) -->
+						<button
+							class="relative h-24 w-24 rounded-full"
+							:disabled="photoUpload.loading"
+							@click="photoInput?.click()"
 						>
-							{{ user.data.first_name[0] }}
-						</div>
+							<img
+								v-if="profileImage"
+								class="h-24 w-24 rounded-full object-cover"
+								:src="profileImage"
+								:alt="user.data.first_name"
+							/>
+							<div
+								v-else
+								class="flex items-center justify-center bg-gray-200 uppercase text-gray-600 h-24 w-24 rounded-full object-cover"
+							>
+								{{ user.data.first_name[0] }}
+							</div>
+							<span
+								class="absolute bottom-0 right-0 flex items-center justify-center h-8 w-8 rounded-full bg-gray-900 text-white border-2 border-white"
+							>
+								<FeatherIcon
+									:name="photoUpload.loading ? 'loader' : 'camera'"
+									class="h-4 w-4"
+								/>
+							</span>
+						</button>
+						<input
+							ref="photoInput"
+							type="file"
+							accept="image/*"
+							class="hidden"
+							@change="onPhotoSelected"
+						/>
 
 						<div class="flex flex-col gap-1.5 items-center mt-2 mb-5">
 							<span v-if="employee" class="text-lg font-bold text-gray-900">{{
@@ -41,6 +62,17 @@
 								employee?.data?.designation
 							}}</span>
 						</div>
+
+						<Button
+							variant="subtle"
+							class="w-full py-4 mb-1"
+							@click="router.push({ name: 'EditProfile' })"
+						>
+							<template #prefix>
+								<FeatherIcon name="edit-2" class="w-4" />
+							</template>
+							{{ __("Edit Profil") }}
+						</Button>
 
 						<!-- Profile Links -->
 						<div class="flex flex-col gap-5 my-4 w-full">
@@ -140,7 +172,7 @@
 import { computed, inject, ref, onMounted, onBeforeUnmount } from "vue"
 import { useRouter } from "vue-router"
 import { IonModal, IonPage, IonContent } from "@ionic/vue"
-import { FeatherIcon, createDocumentResource, createResource } from "frappe-ui"
+import { FeatherIcon, createDocumentResource, createResource, toast } from "frappe-ui"
 
 import { showErrorAlert } from "@/utils/dialogs"
 import { formatCurrency } from "@/utils/formatters"
@@ -248,6 +280,64 @@ const employeeDocType = createResource({
 	params: { doctype: DOCTYPE },
 	auto: true,
 })
+
+// Foto profil: dari data Employee, jatuh ke foto akun User
+const profileImage = computed(() => employeeDoc.doc?.image || user.data?.user_image)
+
+const photoInput = ref(null)
+const MAX_PROFILE_PHOTO_SIDE = 512
+
+const photoUpload = createResource({
+	url: "hrms.xsha.profile.update_my_photo",
+})
+
+function resizeImage(file) {
+	return new Promise((resolve, reject) => {
+		const img = new Image()
+		img.onload = () => {
+			// potong tengah jadi persegi lalu perkecil
+			const side = Math.min(img.width, img.height)
+			const size = Math.min(MAX_PROFILE_PHOTO_SIDE, side)
+			const canvas = document.createElement("canvas")
+			canvas.width = size
+			canvas.height = size
+			canvas
+				.getContext("2d")
+				.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size)
+			URL.revokeObjectURL(img.src)
+			resolve(canvas.toDataURL("image/jpeg", 0.85))
+		}
+		img.onerror = () => reject(new Error(__("File bukan gambar yang valid")))
+		img.src = URL.createObjectURL(file)
+	})
+}
+
+async function onPhotoSelected(event) {
+	const file = event.target.files?.[0]
+	event.target.value = ""
+	if (!file) return
+	try {
+		const photo = await resizeImage(file)
+		await photoUpload.submit({ photo })
+		await Promise.all([employeeDoc.reload(), user.reload()])
+		toast({
+			title: __("Tersimpan"),
+			text: __("Foto profil diperbarui"),
+			icon: "check-circle",
+			position: "bottom-center",
+			iconClasses: "text-green-500",
+		})
+	} catch (error) {
+		const messages = error?.messages?.length ? error.messages : [error?.message]
+		toast({
+			title: __("Gagal mengganti foto"),
+			text: messages.join(" "),
+			icon: "alert-circle",
+			position: "bottom-center",
+			iconClasses: "text-red-500",
+		})
+	}
+}
 
 const getFieldInfo = (fieldname) => {
 	const field = employeeDocType.data.find(

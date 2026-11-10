@@ -219,6 +219,60 @@ def leave_application_validate(doc, method=None):
 
 
 # ---------------------------------------------------------------------------
+# Employee
+# ---------------------------------------------------------------------------
+
+_SKIP_FIELDTYPES = frozenset(
+	("Section Break", "Column Break", "Tab Break", "HTML", "Button", "Table", "Table MultiSelect", "Fold", "Heading")
+)
+
+
+def _normalized(df, value):
+	if value in (None, ""):
+		return None
+	if df.fieldtype in ("Int", "Check"):
+		return frappe.utils.cint(value)
+	if df.fieldtype in ("Float", "Currency", "Percent"):
+		return frappe.utils.flt(value)
+	if df.fieldtype == "Date":
+		return getdate(value)
+	if df.fieldtype == "Datetime":
+		return get_datetime(value)
+	return frappe.utils.cstr(value)
+
+
+def employee_validate(doc, method=None):
+	"""Karyawan yang menyimpan data Employee miliknya sendiri hanya boleh mengubah
+	field profil (lihat hrms.xsha.profile). Menutup celah role Employee Self Service
+	yang punya write ke semua field Employee (rekening, approver, shift, departemen).
+	"""
+	if doc.is_new() or not doc.user_id or frappe.session.user != doc.user_id:
+		return
+	if _is_hr() or frappe.flags.in_import or frappe.flags.in_patch or frappe.flags.in_migrate:
+		return
+
+	from hrms.xsha.profile import SELF_DERIVED_FIELDS, SELF_EDITABLE_FIELDS
+
+	allowed = set(SELF_EDITABLE_FIELDS) | set(SELF_DERIVED_FIELDS)
+	before = doc.get_doc_before_save()
+	if not before:
+		return
+
+	blocked = []
+	for df in doc.meta.fields:
+		if df.fieldtype in _SKIP_FIELDTYPES or df.fieldname in allowed:
+			continue
+		if _normalized(df, doc.get(df.fieldname)) != _normalized(df, before.get(df.fieldname)):
+			blocked.append(_(df.label or df.fieldname))
+
+	if blocked:
+		frappe.throw(
+			_("Anda tidak boleh mengubah data berikut sendiri: {0}. Hubungi HR.").format(", ".join(blocked)),
+			title=_("Perubahan Ditolak"),
+		)
+
+
+# ---------------------------------------------------------------------------
 # Attendance Request
 # ---------------------------------------------------------------------------
 
