@@ -38,6 +38,7 @@
 		trigger="open-checkin-modal"
 		:initial-breakpoint="1"
 		:breakpoints="[0, 1]"
+		@didDismiss="stopCamera"
 	>
 		<div class="h-120 w-full flex flex-col items-center justify-center gap-5 p-4 mb-5">
 			<div class="flex flex-col gap-1.5 mt-2 items-center justify-center">
@@ -49,11 +50,24 @@
 				</div>
 			</div>
 
-			<template v-if="settings.data?.allow_geolocation_tracking">
-				<span v-if="locationStatus" class="font-medium text-gray-500 text-sm">
-					{{ locationStatus }}
-				</span>
-				<div class="rounded border-4 translate-z-0 block overflow-hidden w-full h-170">
+			<template v-if="geolocationRequired">
+				<div class="flex flex-col items-center gap-1 text-center">
+					<span v-if="locationStatus" class="font-medium text-gray-500 text-sm">
+						{{ locationStatus }}
+					</span>
+					<span v-if="locationHelp" class="text-xs text-gray-500">{{ locationHelp }}</span>
+					<button
+						v-if="locationState === 'error'"
+						@click="fetchLocation"
+						class="mt-1 px-4 py-1.5 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium"
+					>
+						🔄 {{ __("Coba Lagi") }}
+					</button>
+				</div>
+				<div
+					v-if="locationState === 'ready'"
+					class="rounded border-4 translate-z-0 block overflow-hidden w-full h-170"
+				>
 					<iframe
 						width="100%"
 						height="170"
@@ -68,13 +82,13 @@
 				</div>
 			</template>
 
-			<!-- SELFIE SECTION -->
+			<!-- SELFIE -->
 			<div class="w-full flex flex-col items-center gap-2">
 				<img
 					v-if="photoPreview"
 					:src="photoPreview"
 					class="w-full max-w-xs rounded-lg border"
-					style="max-height:200px; object-fit:cover;"
+					style="max-height: 200px; object-fit: cover"
 				/>
 				<video
 					v-show="cameraActive && !photoPreview"
@@ -82,9 +96,9 @@
 					autoplay
 					playsinline
 					class="w-full max-w-xs rounded-lg border"
-					style="max-height:200px; object-fit:cover;"
+					style="max-height: 200px; object-fit: cover"
 				></video>
-				<canvas ref="canvasRef" style="display:none;"></canvas>
+				<canvas ref="canvasRef" style="display: none"></canvas>
 
 				<div class="flex gap-2 w-full">
 					<button
@@ -92,36 +106,37 @@
 						@click="openCamera"
 						class="w-full py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium"
 					>
-						📷 Buka Kamera
+						📷 {{ __("Buka Kamera") }}
 					</button>
 					<button
 						v-if="cameraActive && !photoPreview"
 						@click="capturePhoto"
 						class="w-full py-2 rounded-lg bg-blue-500 text-white text-sm font-medium"
 					>
-						📸 Ambil Foto
+						📸 {{ __("Ambil Foto") }}
 					</button>
 					<button
 						v-if="photoPreview"
 						@click="retakePhoto"
 						class="w-full py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium"
 					>
-						🔄 Foto Ulang
+						🔄 {{ __("Foto Ulang") }}
 					</button>
 				</div>
 
-				<span v-if="photoStatus" class="text-xs text-gray-500">{{ photoStatus }}</span>
+				<span v-if="photoStatus" class="text-xs text-gray-500 text-center">{{ photoStatus }}</span>
 			</div>
-			<!-- END SELFIE SECTION -->
 
 			<Button
-				:loading="checkins.insert.loading"
+				:loading="createCheckin.loading"
+				:disabled="!canConfirm"
 				variant="solid"
 				class="w-full py-5 text-sm disabled:bg-gray-700"
 				@click="submitLog(nextAction.action)"
 			>
 				{{ __("Confirm {0}", [nextAction.label]) }}
 			</Button>
+			<span v-if="confirmHint" class="text-xs text-gray-500 -mt-3">{{ confirmHint }}</span>
 		</div>
 	</ion-modal>
 </template>
@@ -133,6 +148,9 @@ import { IonModal, modalController } from "@ionic/vue"
 import { formatTimestamp } from "@/utils/formatters"
 
 const DOCTYPE = "Employee Checkin"
+// A08: rata-rata kecerahan minimal (0-255). Server memakai batas yang sama.
+const MIN_BRIGHTNESS = 35
+const MAX_PHOTO_SIDE = 960
 
 const socket = inject("$socket")
 const employee = inject("$employee")
@@ -142,24 +160,27 @@ const checkinTimestamp = ref(null)
 const latitude = ref(0)
 const longitude = ref(0)
 const locationStatus = ref("")
+const locationHelp = ref("")
+const locationState = ref("idle") // idle | locating | ready | error
 
 const videoRef = ref(null)
 const canvasRef = ref(null)
 const cameraActive = ref(false)
 const photoPreview = ref(null)
-const photoUrl = ref(null)
+const photoData = ref(null)
 const photoStatus = ref("")
 let cameraStream = null
-let csrfToken = ""
 
 const settings = createResource({
 	url: "hrms.api.get_hr_settings",
 	auto: true,
 })
 
+const geolocationRequired = computed(() => Boolean(settings.data?.allow_geolocation_tracking))
+
 const checkins = createListResource({
 	doctype: DOCTYPE,
-	fields: ["name", "employee", "employee_name", "log_type", "time", "device_id"],
+	fields: ["name", "employee", "employee_name", "log_type", "time", "device_id", "shift_actual_end"],
 	filters: { employee: employee.data.name },
 	orderBy: "time desc",
 })
@@ -174,149 +195,185 @@ const lastLogType = computed(() => {
 	return lastLog?.value?.log_type === "IN" ? "check-in" : "check-out"
 })
 
+// A15: check-in yang tidak ditutup (lupa check-out) tidak boleh membuat tombol esok hari
+// tetap "Check Out". Log IN dianggap sudah lewat jika jendela shift-nya sudah selesai,
+// atau (untuk log tanpa shift) jika bukan dari hari ini.
+function isOpenCheckin(log) {
+	if (log?.log_type !== "IN") return false
+	if (log.shift_actual_end) return dayjs().isBefore(dayjs(log.shift_actual_end))
+	return dayjs(log.time).isSame(dayjs(), "day")
+}
+
 const nextAction = computed(() => {
-	return lastLog?.value?.log_type === "IN"
+	return isOpenCheckin(lastLog.value)
 		? { action: "OUT", label: __("Check Out") }
 		: { action: "IN", label: __("Check In") }
 })
 
+const canConfirm = computed(() => {
+	if (!photoData.value) return false
+	if (geolocationRequired.value && locationState.value !== "ready") return false
+	return true
+})
+
+const confirmHint = computed(() => {
+	if (!photoData.value) return __("Ambil selfie terlebih dahulu")
+	if (geolocationRequired.value && locationState.value !== "ready") return __("Menunggu lokasi terbaca")
+	return ""
+})
+
+// A18: lokasi dengan akurasi tinggi, timeout, tombol Coba Lagi, dan panduan izin.
 function handleLocationSuccess(position) {
 	latitude.value = position.coords.latitude
 	longitude.value = position.coords.longitude
+	locationState.value = "ready"
+	locationHelp.value = ""
 	locationStatus.value = [
 		__("Latitude: {0}°", [Number(latitude.value).toFixed(5)]),
 		__("Longitude: {0}°", [Number(longitude.value).toFixed(5)]),
+		__("Akurasi ±{0} m", [Math.round(position.coords.accuracy || 0)]),
 	].join(", ")
 }
 
 function handleLocationError(error) {
-	locationStatus.value = "Unable to retrieve your location"
-	if (error) locationStatus.value += `: ERROR(${error.code}): ${error.message}`
+	locationState.value = "error"
+	const messages = {
+		1: [
+			__("Izin lokasi ditolak."),
+			__("Buka pengaturan browser/HP, izinkan Lokasi untuk situs ini, lalu tekan Coba Lagi."),
+		],
+		2: [__("Lokasi tidak tersedia."), __("Pastikan GPS menyala dan coba di area terbuka.")],
+		3: [__("Lokasi terlalu lama dibaca."), __("Pastikan GPS menyala, lalu tekan Coba Lagi.")],
+	}
+	const [status, help] = messages[error?.code] || [__("Lokasi gagal dibaca."), ""]
+	locationStatus.value = status
+	locationHelp.value = help
 }
 
 const fetchLocation = () => {
 	if (!navigator.geolocation) {
+		locationState.value = "error"
 		locationStatus.value = __("Geolocation is not supported by your current browser")
-	} else {
-		locationStatus.value = __("Locating...")
-		navigator.geolocation.getCurrentPosition(handleLocationSuccess, handleLocationError)
+		locationHelp.value = ""
+		return
 	}
+	locationState.value = "locating"
+	locationStatus.value = __("Locating...")
+	locationHelp.value = ""
+	navigator.geolocation.getCurrentPosition(handleLocationSuccess, handleLocationError, {
+		enableHighAccuracy: true,
+		timeout: 20000,
+		maximumAge: 0,
+	})
 }
 
-// Ambil CSRF token dari Python API
-async function fetchCsrfToken() {
-	try {
-		const res = await fetch("/api/method/hrms.api.get_csrf.get_csrf_token", {
-			credentials: "same-origin",
-		})
-		const data = await res.json()
-		if (data.message) {
-			csrfToken = data.message
-			console.log("✅ CSRF Token:", csrfToken)
-		} else {
-			console.warn("❌ CSRF token kosong:", data)
-		}
-	} catch (e) {
-		console.warn("❌ Gagal fetch CSRF token:", e)
-	}
-}
-
-const handleEmployeeCheckin = async () => {
+const handleEmployeeCheckin = () => {
 	checkinTimestamp.value = dayjs().format("YYYY-MM-DD HH:mm:ss")
 	photoPreview.value = null
-	photoUrl.value = null
+	photoData.value = null
 	photoStatus.value = ""
 	cameraActive.value = false
-	await fetchCsrfToken()
-	if (settings.data?.allow_geolocation_tracking) fetchLocation()
+	locationState.value = "idle"
+	if (geolocationRequired.value) fetchLocation()
+}
+
+function stopCamera() {
+	if (cameraStream) cameraStream.getTracks().forEach((t) => t.stop())
+	cameraStream = null
+	cameraActive.value = false
 }
 
 const openCamera = async () => {
 	try {
 		cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
 		cameraActive.value = true
-		await new Promise(r => setTimeout(r, 100))
+		photoStatus.value = ""
+		await new Promise((r) => setTimeout(r, 100))
 		if (videoRef.value) videoRef.value.srcObject = cameraStream
 	} catch (err) {
-		photoStatus.value = "❌ Tidak bisa akses kamera: " + err.message
+		photoStatus.value = __("Tidak bisa membuka kamera: {0}", [err.message])
 	}
 }
 
+function averageBrightness(ctx, width, height) {
+	const { data } = ctx.getImageData(0, 0, width, height)
+	let total = 0
+	let count = 0
+	// sampling tiap 16 piksel cukup untuk rata-rata
+	for (let i = 0; i < data.length; i += 64) {
+		total += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+		count++
+	}
+	return count ? total / count : 0
+}
+
+// A07/A09: foto tidak di-upload saat diambil. Foto disimpan di memori dan dikirim
+// bersama check-in saat Confirm, lalu server menyimpannya sebagai file private.
 const capturePhoto = () => {
 	const video = videoRef.value
 	const canvas = canvasRef.value
-	if (!video || !canvas) return
+	if (!video || !canvas || !video.videoWidth) return
 
-	canvas.width = video.videoWidth
-	canvas.height = video.videoHeight
-	canvas.getContext("2d").drawImage(video, 0, 0)
+	const scale = Math.min(1, MAX_PHOTO_SIDE / Math.max(video.videoWidth, video.videoHeight))
+	canvas.width = Math.round(video.videoWidth * scale)
+	canvas.height = Math.round(video.videoHeight * scale)
+	const ctx = canvas.getContext("2d")
+	ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+	stopCamera()
 
-	photoPreview.value = canvas.toDataURL("image/jpeg", 0.8)
-	cameraActive.value = false
-	if (cameraStream) cameraStream.getTracks().forEach(t => t.stop())
+	const dataUrl = canvas.toDataURL("image/jpeg", 0.8)
+	photoPreview.value = dataUrl
 
-	canvas.toBlob(async (blob) => {
-		photoStatus.value = "⏳ Mengupload foto..."
-		await fetchCsrfToken()
-
-		try {
-			const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
-			const filename = `selfie_${employee.data.name}_${timestamp}.jpg`
-			const file = new File([blob], filename, { type: "image/jpeg" })
-
-			const formData = new FormData()
-			formData.append("file", file)
-			formData.append("is_private", 0)
-
-			console.log("Uploading with token:", csrfToken)
-
-			const res = await fetch("/api/method/upload_file", {
-				method: "POST",
-				headers: {
-					"X-Frappe-CSRF-Token": csrfToken,
-					"X-Requested-With": "XMLHttpRequest",
-				},
-				credentials: "same-origin",
-				body: formData,
-			})
-
-			const data = await res.json()
-			console.log("Upload response:", data)
-
-			if (data.message?.file_url) {
-				photoUrl.value = data.message.file_url
-				photoStatus.value = "✅ Foto siap"
-			} else {
-				photoStatus.value = "❌ Gagal: " + (data.exc_type || "unknown")
-			}
-		} catch (err) {
-			photoStatus.value = "❌ Error: " + err.message
-		}
-	}, "image/jpeg", 0.8)
+	// A08: tolak foto gelap / kamera tertutup
+	if (averageBrightness(ctx, canvas.width, canvas.height) < MIN_BRIGHTNESS) {
+		photoData.value = null
+		photoStatus.value = __("Foto terlalu gelap. Pastikan wajah terlihat jelas, lalu foto ulang.")
+		return
+	}
+	photoData.value = dataUrl
+	photoStatus.value = __("Foto siap")
 }
 
 const retakePhoto = () => {
 	photoPreview.value = null
-	photoUrl.value = null
+	photoData.value = null
 	photoStatus.value = ""
 	openCamera()
 }
 
+const createCheckin = createResource({
+	url: "hrms.xsha.checkin.create_checkin",
+})
+
 const submitLog = (logType) => {
 	const actionLabel = logType === "IN" ? __("Check-in") : __("Check-out")
-	checkins.insert.submit(
+	createCheckin.submit(
 		{
-			employee: employee.data.name,
 			log_type: logType,
-			time: checkinTimestamp.value,
 			latitude: latitude.value,
 			longitude: longitude.value,
-			custom_foto_selfie: photoUrl.value || "",
+			photo: photoData.value,
 		},
 		{
-			onSuccess() {
-				if (cameraStream) cameraStream.getTracks().forEach(t => t.stop())
+			onSuccess(data) {
+				stopCamera()
 				modalController.dismiss()
+				checkins.reload()
+				// A10: log di luar shift tidak akan menjadi Attendance, beri tahu karyawan
+				if (data?.offshift) {
+					toast({
+						title: __("Tercatat di luar shift"),
+						text: __(
+							"{0} tersimpan, tetapi tidak ada shift yang cocok dengan jam ini sehingga tidak dihitung sebagai kehadiran. Hubungi HR jika ini keliru.",
+							[actionLabel]
+						),
+						icon: "alert-triangle",
+						position: "bottom-center",
+						iconClasses: "text-yellow-500",
+						timeout: 8,
+					})
+					return
+				}
 				toast({
 					title: __("Success"),
 					text: __("{0} successful!", [actionLabel]),
@@ -326,11 +383,11 @@ const submitLog = (logType) => {
 				})
 			},
 			onError(error) {
-				let messages = error.messages || []
+				const messages = error.messages?.length ? error.messages : [error.message]
 				for (const message of messages) {
 					toast({
 						title: __("Error"),
-						text: message || __("{0} failed!", [actionLabel]),
+						text: __("{0} failed!", [actionLabel]) + (message ? `: ${message}` : ""),
 						icon: "alert-circle",
 						position: "bottom-center",
 						iconClasses: "text-red-500",
@@ -342,7 +399,6 @@ const submitLog = (logType) => {
 }
 
 onMounted(() => {
-	fetchCsrfToken()
 	socket.emit("doctype_subscribe", DOCTYPE)
 	socket.on("list_update", (data) => {
 		if (data.doctype == DOCTYPE) checkins.reload()
@@ -350,7 +406,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-	if (cameraStream) cameraStream.getTracks().forEach(t => t.stop())
+	stopCamera()
 	socket.emit("doctype_unsubscribe", DOCTYPE)
 	socket.off("list_update")
 })

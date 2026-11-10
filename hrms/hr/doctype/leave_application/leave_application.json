@@ -146,7 +146,8 @@
   {
    "fieldname": "description",
    "fieldtype": "Small Text",
-   "label": "Reason"
+   "label": "Reason",
+   "reqd": 1
   },
   {
    "fieldname": "section_break_7",
@@ -255,7 +256,7 @@
  "is_submittable": 1,
  "links": [],
  "max_attachments": 3,
- "modified": "2024-04-08 13:56:03.818019",
+ "modified": "2026-11-10 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "HR",
  "name": "Leave Application",

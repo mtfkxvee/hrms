@@ -13,8 +13,28 @@ export function sessionUser() {
 	return _sessionUser
 }
 
-function handleLogin(response) {
+// A01: setelah login tanpa reload halaman, window.csrf_token masih token sesi tamu
+// sehingga POST pertama (mis. check-in) ditolak "Invalid Request". Ambil token sesi
+// baru lewat GET (GET tidak diperiksa CSRF) sebelum request lain dikirim.
+async function refreshCsrfToken() {
+	try {
+		const res = await fetch("/api/method/hrms.api.get_csrf.get_csrf_token", {
+			credentials: "same-origin",
+		})
+		const data = await res.json()
+		if (data.message) {
+			window.csrf_token = data.message
+			return
+		}
+	} catch (e) {
+		// jatuh ke reload di bawah
+	}
+	window.location.reload()
+}
+
+async function handleLogin(response) {
 	if (response.message === "Logged In") {
+		await refreshCsrfToken()
 		userResource.reload()
 		employeeResource.reload()
 
@@ -26,12 +46,12 @@ function handleLogin(response) {
 export const session = reactive({
 	login: async (email, password) => {
 		const response = await call("login", { usr: email, pwd: password })
-		handleLogin(response)
+		await handleLogin(response)
 		return response
 	},
 	otp: async (tmp_id, otp) => {
 		const response = await call("login", { tmp_id, otp })
-		handleLogin(response)
+		await handleLogin(response)
 		return response
 	},
 	logout: createResource({

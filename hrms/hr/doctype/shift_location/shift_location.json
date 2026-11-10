@@ -8,6 +8,7 @@
  "field_order": [
   "location_name",
   "checkin_radius",
+  "branch",
   "column_break_dlgd",
   "latitude",
   "longitude",
@@ -29,6 +30,15 @@
    "fieldname": "checkin_radius",
    "fieldtype": "Int",
    "label": "Checkin Radius"
+  },
+  {
+   "description": "Dipakai untuk cek radius karyawan cabang ini yang tidak punya lokasi di Shift Assignment",
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Branch",
+   "options": "Branch",
+   "unique": 1
   },
   {
    "fieldname": "column_break_dlgd",
@@ -65,7 +75,7 @@
    "link_fieldname": "shift_location"
   }
  ],
- "modified": "2024-10-10 12:54:26.209170",
+ "modified": "2026-11-10 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "HR",
  "name": "Shift Location",

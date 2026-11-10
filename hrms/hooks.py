@@ -213,6 +213,18 @@ doc_events = {
 	},
 	"Project": {"validate": "hrms.controllers.employee_boarding_controller.update_employee_boarding_status"},
 	"Task": {"on_update": "hrms.controllers.employee_boarding_controller.update_task"},
+	# X-Sha: aturan tambahan, lihat hrms/xsha/rules.py
+	"Employee Checkin": {
+		"before_validate": "hrms.xsha.rules.checkin_before_validate",
+		"validate": "hrms.xsha.rules.checkin_validate",
+	},
+	"Shift Request": {
+		"validate": "hrms.xsha.rules.shift_request_validate",
+		"before_submit": "hrms.xsha.rules.shift_request_before_submit",
+		"on_submit": "hrms.xsha.rules.shift_request_on_submit",
+	},
+	"Leave Application": {"validate": "hrms.xsha.rules.leave_application_validate"},
+	"Attendance Request": {"before_submit": "hrms.xsha.rules.attendance_request_before_submit"},
 }
 
 # Scheduled Tasks
@@ -236,6 +248,7 @@ scheduler_events = {
 		"hrms.hr.doctype.daily_work_summary_group.daily_work_summary_group.send_summary",
 		"hrms.hr.doctype.interview.interview.send_daily_feedback_reminder",
 		"hrms.hr.doctype.job_opening.job_opening.close_expired_job_openings",
+		"hrms.xsha.reminders.send_pending_approval_digest",
 	],
 	"daily_long": [
 		"hrms.hr.doctype.leave_ledger_entry.leave_ledger_entry.process_expired_allocation",

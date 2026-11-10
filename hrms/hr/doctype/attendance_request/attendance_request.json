@@ -99,7 +99,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Reason",
-   "options": "Work From Home\nOn Duty",
+   "options": "Work From Home\nOn Duty\nLupa Absen",
    "reqd": 1
   },
   {
@@ -109,7 +109,8 @@
   {
    "fieldname": "explanation",
    "fieldtype": "Small Text",
-   "label": "Explanation"
+   "label": "Explanation",
+   "reqd": 1
   },
   {
    "fieldname": "amended_from",
@@ -136,7 +137,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2023-12-20 16:18:31.864719",
+ "modified": "2026-11-10 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "HR",
  "name": "Attendance Request",
