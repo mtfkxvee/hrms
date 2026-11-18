@@ -152,13 +152,71 @@ def shift_request_validate(doc, method=None):
 
 def shift_request_before_submit(doc, method=None):
 	_guard_decider(doc, "approver", _("pengajuan ganti shift"))
+	if doc.status == "Approved":
+		doc.flags.xsha_shift_location = cut_shift_assignments(doc.employee, doc.from_date, doc.to_date)
 
 
 def shift_request_on_submit(doc, method=None):
 	"""S06: setelah ganti shift disetujui, log check-in di rentang itu dihitung ulang shift-nya."""
 	if doc.status != "Approved":
 		return
+	location = doc.flags.get("xsha_shift_location")
+	if location:
+		for name in frappe.get_all(
+			"Shift Assignment",
+			filters={"shift_request": doc.name, "docstatus": 1, "shift_location": ["is", "not set"]},
+			pluck="name",
+		):
+			frappe.db.set_value("Shift Assignment", name, "shift_location", location)
 	refresh_checkin_shifts(doc.employee, doc.from_date, doc.to_date)
+
+
+def cut_shift_assignments(employee: str, from_date, to_date) -> str | None:
+	"""Kosongkan jadwal aktif di rentang Shift Request supaya assignment baru bisa dibuat.
+
+	Jadwal hasil Import Jadwal Shift menutup setiap hari, sehingga Shift Assignment dari
+	Shift Request selalu bentrok (MultipleShiftError). Bagian jadwal di luar rentang tetap:
+	assignment yang mulai sebelum rentang dipendekkan, sisa setelah rentang dibuat ulang
+	dengan shift dan lokasi yang sama, yang seluruhnya di dalam rentang dibatalkan.
+	Mengembalikan lokasi check-in jadwal lama untuk dipasang ke assignment baru.
+	"""
+	start, end = getdate(from_date), getdate(to_date or from_date)
+	rows = frappe.get_all(
+		"Shift Assignment",
+		filters={"employee": employee, "docstatus": 1, "status": "Active", "start_date": ["<=", end]},
+		or_filters=[["end_date", ">=", start], ["end_date", "is", "not set"]],
+		fields=["name", "company", "shift_type", "shift_location", "start_date", "end_date", "status"],
+		order_by="start_date",
+	)
+	location = next((r.shift_location for r in rows if r.shift_location), None)
+	for r in rows:
+		r_start = getdate(r.start_date)
+		r_end = getdate(r.end_date) if r.end_date else None
+		sa = frappe.get_doc("Shift Assignment", r.name)
+		sa.flags.ignore_permissions = True
+		if r_start < start:
+			sa.end_date = add_days(start, -1)
+			sa.save()
+		else:
+			sa.cancel()
+		if r_end is None or r_end > end:
+			# approver (kepala toko) belum tentu punya izin tulis Shift Assignment
+			rest = frappe.get_doc(
+				{
+					"doctype": "Shift Assignment",
+					"employee": employee,
+					"company": r.company,
+					"shift_type": r.shift_type,
+					"shift_location": r.shift_location,
+					"start_date": add_days(end, 1),
+					"end_date": r_end,
+					"status": r.status,
+				}
+			)
+			rest.flags.ignore_permissions = True
+			rest.insert()
+			rest.submit()
+	return location
 
 
 def refresh_checkin_shifts(employee: str, from_date, to_date=None) -> list[str]:

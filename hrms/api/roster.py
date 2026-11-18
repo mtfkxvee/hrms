@@ -167,6 +167,9 @@ def insert_shift(
 ) -> None:
 	filters = {
 		"doctype": "Shift Assignment",
+		# X-Sha: abaikan assignment yang sudah dibatalkan (dari Import Jadwal / Shift Request),
+		# kalau tidak, end_date assignment batal yang diperpanjang dan hari itu jadi tanpa jadwal
+		"docstatus": 1,
 		"employee": employee,
 		"company": company,
 		"shift_type": shift_type,
