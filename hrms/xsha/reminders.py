@@ -25,7 +25,33 @@ def get_pending_by_approver() -> dict[str, list[dict]]:
 		for row in rows:
 			row.update(doctype=doctype, label=label)
 			pending[row.approver].append(row)
+	_add_pending_lembur(pending)
 	return pending
+
+
+def _add_pending_lembur(pending):
+	"""Lembur: atasan (persetujuan & konfirmasi realisasi) dan HRD (persetujuan tahap 2)."""
+	if not frappe.db.exists("DocType", "Overtime Request"):
+		return
+	from hrms.xsha.lembur import _hrd_users
+
+	fields = ["name", "employee_name", "tanggal as from_date", "tanggal as to_date", "atasan", "status"]
+	for row in frappe.get_all(
+		"Overtime Request",
+		filters={"status": ["in", ["Pending Supervisor", "Pending Confirmation"]], "atasan": ["is", "set"]},
+		fields=fields,
+		order_by="tanggal asc",
+	):
+		label = "Lembur" if row.status == "Pending Supervisor" else "Konfirmasi Lembur"
+		row.update(doctype="Overtime Request", label=label)
+		pending[row.atasan].append(row)
+
+	hrd_rows = frappe.get_all(
+		"Overtime Request", filters={"status": "Pending HR"}, fields=fields, order_by="tanggal asc"
+	)
+	for user in _hrd_users() if hrd_rows else []:
+		for row in hrd_rows:
+			pending[user].append(frappe._dict(row, doctype="Overtime Request", label="Lembur (HRD)"))
 
 
 def build_message(rows: list[dict]) -> str:

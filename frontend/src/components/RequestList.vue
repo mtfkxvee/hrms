@@ -37,7 +37,12 @@
 		:initial-breakpoint="1"
 		:breakpoints="[0, 1]"
 	>
-		<RequestActionSheet :fields="fieldsMap[selectedRequest?.doctype]" v-model="selectedRequest" />
+		<LemburDetail
+			v-if="selectedRequest?.doctype === 'Overtime Request'"
+			:name="selectedRequest.name"
+			:inModal="true"
+		/>
+		<RequestActionSheet v-else :fields="fieldsMap[selectedRequest?.doctype]" v-model="selectedRequest" />
 	</ion-modal>
 </template>
 
@@ -45,6 +50,7 @@
 import { ref, inject } from "vue"
 import { IonModal } from "@ionic/vue"
 import RequestActionSheet from "@/components/RequestActionSheet.vue"
+import LemburDetail from "@/components/LemburDetail.vue"
 
 import {
 	LEAVE_FIELDS,

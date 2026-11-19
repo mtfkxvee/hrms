@@ -140,6 +140,15 @@ before_app_uninstall = "hrms.setup.before_app_uninstall"
 # 	"Event": "frappe.desk.doctype.event.event.has_permission",
 # }
 
+# X-Sha: pengajuan lembur hanya terlihat oleh pemohon, atasannya, dan HRD (hrms/xsha/lembur.py)
+permission_query_conditions = {
+	"Overtime Request": "hrms.xsha.lembur.get_permission_query_conditions",
+}
+
+has_permission = {
+	"Overtime Request": "hrms.xsha.lembur.has_permission",
+}
+
 has_upload_permission = {"Employee": "erpnext.setup.doctype.employee.employee.has_upload_permission"}
 
 # DocType Class
@@ -228,6 +237,11 @@ doc_events = {
 	},
 	"Leave Application": {"validate": "hrms.xsha.rules.leave_application_validate"},
 	"Attendance Request": {"before_submit": "hrms.xsha.rules.attendance_request_before_submit"},
+	# X-Sha: pulang lebih awal karena PJK lembur tidak dihitung pulang cepat
+	"Attendance": {
+		"before_submit": "hrms.xsha.lembur.attendance_before_submit",
+		"on_submit": "hrms.xsha.lembur.attendance_on_submit",
+	},
 }
 
 # Scheduled Tasks
@@ -252,6 +266,7 @@ scheduler_events = {
 		"hrms.hr.doctype.interview.interview.send_daily_feedback_reminder",
 		"hrms.hr.doctype.job_opening.job_opening.close_expired_job_openings",
 		"hrms.xsha.reminders.send_pending_approval_digest",
+		"hrms.xsha.lembur.hanguskan_pjk",
 	],
 	"daily_long": [
 		"hrms.hr.doctype.leave_ledger_entry.leave_ledger_entry.process_expired_allocation",

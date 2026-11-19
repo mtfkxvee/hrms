@@ -1,0 +1,21 @@
+{
+ "align_labels_right": 0,
+ "creation": "2026-11-19 12:00:00.000000",
+ "custom_format": 1,
+ "disabled": 0,
+ "doc_type": "Overtime Request",
+ "docstatus": 0,
+ "doctype": "Print Format",
+ "html": "<div style=\"font-family: Arial, sans-serif; font-size: 13px;\">\n<h3 style=\"text-align:center; margin-bottom:4px;\">SURAT PERINTAH LEMBUR (SPL)</h3>\n<p style=\"text-align:center; margin-top:0;\">Nomor: {{ doc.nomor_spl or \"-\" }}</p>\n<p>Berdasarkan Formulir Permohonan Lembur {{ doc.name }} yang telah disetujui Atasan dan HRD, dengan ini diperintahkan kepada:</p>\n<table style=\"width:100%; border-collapse:collapse;\" cellpadding=\"4\">\n<tr><td style=\"width:35%\">Nama</td><td>: {{ doc.employee_name }} ({{ doc.employee }})</td></tr>\n<tr><td>Outlet / Departemen</td><td>: {{ doc.branch or \"-\" }} / {{ doc.department or \"-\" }}</td></tr>\n<tr><td>Tanggal Lembur</td><td>: {{ frappe.format(doc.tanggal, {\"fieldtype\": \"Date\"}) }}</td></tr>\n<tr><td>Waktu</td><td>: {{ (doc.jam_mulai|string)[:5] }} - {{ (doc.jam_selesai|string)[:5] }} ({{ doc.durasi_rencana }} jam)</td></tr>\n<tr><td>Pekerjaan</td><td>: {{ doc.pekerjaan }}</td></tr>\n<tr><td>Alasan</td><td>: {{ doc.alasan }}</td></tr>\n<tr><td>Kompensasi</td><td>: {{ doc.kompensasi or \"-\" }}\n{% if doc.kompensasi == \"PJK\" and doc.pjk_tanggal %}, diambil {{ frappe.format(doc.pjk_tanggal, {\"fieldtype\": \"Date\"}) }} pukul {{ (doc.pjk_jam_mulai|string)[:5] }} - {{ (doc.pjk_jam_selesai|string)[:5] }}{% endif %}</td></tr>\n{% if doc.selesai_lembur %}\n<tr><td>Realisasi</td><td>: {{ frappe.format(doc.mulai_lembur, {\"fieldtype\": \"Datetime\"}) }} s.d. {{ frappe.format(doc.selesai_lembur, {\"fieldtype\": \"Datetime\"}) }}, dihitung {{ doc.jam_dihitung }} jam</td></tr>\n{% endif %}\n</table>\n<p>Lembur dilaksanakan sesuai jadwal, waktu, dan tugas di atas. Jam lembur dihitung dari waktu nyata pelaksanaan: sisa 45 menit atau lebih dibulatkan 1 jam, kurang dari 45 menit tidak dihitung, maksimal 3 jam dalam 1 hari.</p>\n<table style=\"width:100%; margin-top:30px; text-align:center;\">\n<tr><td>Disetujui Atasan</td><td>Disetujui HRD</td><td>Karyawan</td></tr>\n<tr><td style=\"height:60px\"></td><td></td><td></td></tr>\n<tr><td>{{ frappe.db.get_value(\"User\", doc.disetujui_atasan_oleh, \"full_name\") if doc.disetujui_atasan_oleh else \"\" }}<br><small>{{ frappe.format(doc.disetujui_atasan_pada, {\"fieldtype\": \"Datetime\"}) if doc.disetujui_atasan_pada else \"\" }}</small></td>\n<td>{{ frappe.db.get_value(\"User\", doc.disetujui_hrd_oleh, \"full_name\") if doc.disetujui_hrd_oleh else \"\" }}<br><small>{{ frappe.format(doc.disetujui_hrd_pada, {\"fieldtype\": \"Datetime\"}) if doc.disetujui_hrd_pada else \"\" }}</small></td>\n<td>{{ doc.employee_name }}</td></tr>\n</table>\n<p style=\"margin-top:20px; font-size:11px; color:#666;\">Dokumen ini dibuat dari aplikasi HRMS. Persetujuan dicatat secara digital.</p>\n</div>",
+ "idx": 0,
+ "line_breaks": 0,
+ "modified": "2026-11-19 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "HR",
+ "name": "Surat Perintah Lembur",
+ "owner": "Administrator",
+ "print_format_builder": 0,
+ "print_format_type": "Jinja",
+ "show_section_headings": 0,
+ "standard": "Yes"
+}

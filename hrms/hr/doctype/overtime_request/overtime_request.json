@@ -1,0 +1,538 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "OT-.YYYY.-.#####",
+ "creation": "2026-11-19 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "section_pengajuan",
+  "employee",
+  "employee_name",
+  "branch",
+  "department",
+  "company",
+  "column_break_1",
+  "tanggal",
+  "jam_mulai",
+  "jam_selesai",
+  "durasi_rencana",
+  "section_alasan",
+  "pekerjaan",
+  "alasan",
+  "section_persetujuan",
+  "status",
+  "atasan",
+  "atasan_name",
+  "kompensasi",
+  "column_break_2",
+  "pjk_tanggal",
+  "pjk_jam_mulai",
+  "pjk_jam_selesai",
+  "saldo_pjk_penuh",
+  "section_spl",
+  "nomor_spl",
+  "disetujui_atasan_oleh",
+  "disetujui_atasan_pada",
+  "column_break_3",
+  "disetujui_hrd_oleh",
+  "disetujui_hrd_pada",
+  "alasan_penolakan",
+  "section_pelaksanaan",
+  "mulai_lembur",
+  "mulai_latitude",
+  "mulai_longitude",
+  "foto_mulai",
+  "column_break_4",
+  "selesai_lembur",
+  "selesai_latitude",
+  "selesai_longitude",
+  "foto_selesai",
+  "section_realisasi",
+  "menit_realisasi",
+  "jam_dihitung",
+  "tanggal_merah",
+  "column_break_5",
+  "dikonfirmasi_oleh",
+  "dikonfirmasi_pada",
+  "selesai_diisi_manual",
+  "section_pjk",
+  "status_pjk",
+  "pjk_diambil_pada",
+  "section_catatan",
+  "catatan"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_pengajuan",
+   "fieldtype": "Section Break",
+   "label": "Overtime Request"
+  },
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "label": "Employee",
+   "options": "Employee",
+   "reqd": 1,
+   "in_standard_filter": 1,
+   "ignore_user_permissions": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "employee_name",
+   "fieldtype": "Data",
+   "label": "Employee Name",
+   "fetch_from": "employee.employee_name",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "label": "Branch",
+   "options": "Branch",
+   "fetch_from": "employee.branch",
+   "read_only": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "department",
+   "fieldtype": "Link",
+   "label": "Department",
+   "options": "Department",
+   "fetch_from": "employee.department",
+   "read_only": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "fetch_from": "employee.company",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "tanggal",
+   "fieldtype": "Date",
+   "label": "Overtime Date",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "jam_mulai",
+   "fieldtype": "Time",
+   "label": "From Time",
+   "reqd": 1
+  },
+  {
+   "fieldname": "jam_selesai",
+   "fieldtype": "Time",
+   "label": "To Time",
+   "reqd": 1
+  },
+  {
+   "fieldname": "durasi_rencana",
+   "fieldtype": "Float",
+   "label": "Planned Hours",
+   "read_only": 1,
+   "precision": "2"
+  },
+  {
+   "fieldname": "section_alasan",
+   "fieldtype": "Section Break",
+   "label": "Work and Reason"
+  },
+  {
+   "fieldname": "pekerjaan",
+   "fieldtype": "Small Text",
+   "label": "Work to Do",
+   "reqd": 1
+  },
+  {
+   "fieldname": "alasan",
+   "fieldtype": "Small Text",
+   "label": "Reason",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_persetujuan",
+   "fieldtype": "Section Break",
+   "label": "Approval"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Pending Supervisor\nPending HR\nApproved\nIn Progress\nPending Confirmation\nCompleted\nRejected\nCancelled",
+   "default": "Pending Supervisor",
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1,
+   "allow_on_submit": 0
+  },
+  {
+   "fieldname": "atasan",
+   "fieldtype": "Link",
+   "label": "Supervisor",
+   "options": "User",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "atasan_name",
+   "fieldtype": "Data",
+   "label": "Supervisor Name",
+   "fetch_from": "atasan.full_name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "kompensasi",
+   "fieldtype": "Select",
+   "label": "Compensation",
+   "options": "\nPJK\nPaid Overtime",
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "pjk_tanggal",
+   "fieldtype": "Date",
+   "label": "PJK Date",
+   "read_only": 1,
+   "depends_on": "eval:doc.kompensasi=='PJK'"
+  },
+  {
+   "fieldname": "pjk_jam_mulai",
+   "fieldtype": "Time",
+   "label": "PJK From Time",
+   "read_only": 1,
+   "depends_on": "eval:doc.kompensasi=='PJK'"
+  },
+  {
+   "fieldname": "pjk_jam_selesai",
+   "fieldtype": "Time",
+   "label": "PJK To Time",
+   "read_only": 1,
+   "depends_on": "eval:doc.kompensasi=='PJK'"
+  },
+  {
+   "fieldname": "saldo_pjk_penuh",
+   "fieldtype": "Check",
+   "label": "PJK Balance Exceeded",
+   "read_only": 1,
+   "description": "PJK balance plus this overtime exceeds 9 hours. HR Manager approval is needed to change it to Paid Overtime."
+  },
+  {
+   "fieldname": "section_spl",
+   "fieldtype": "Section Break",
+   "label": "Overtime Order (SPL)",
+   "depends_on": "eval:doc.nomor_spl || doc.alasan_penolakan"
+  },
+  {
+   "fieldname": "nomor_spl",
+   "fieldtype": "Data",
+   "label": "SPL Number",
+   "read_only": 1,
+   "in_list_view": 0
+  },
+  {
+   "fieldname": "disetujui_atasan_oleh",
+   "fieldtype": "Link",
+   "label": "Approved by Supervisor",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "disetujui_atasan_pada",
+   "fieldtype": "Datetime",
+   "label": "Supervisor Approved On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "disetujui_hrd_oleh",
+   "fieldtype": "Link",
+   "label": "Approved by HR",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "disetujui_hrd_pada",
+   "fieldtype": "Datetime",
+   "label": "HR Approved On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "alasan_penolakan",
+   "fieldtype": "Small Text",
+   "label": "Rejection Reason",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_pelaksanaan",
+   "fieldtype": "Section Break",
+   "label": "Execution",
+   "depends_on": "eval:doc.mulai_lembur"
+  },
+  {
+   "fieldname": "mulai_lembur",
+   "fieldtype": "Datetime",
+   "label": "Overtime Started",
+   "read_only": 1
+  },
+  {
+   "fieldname": "mulai_latitude",
+   "fieldtype": "Float",
+   "label": "Start Latitude",
+   "read_only": 1,
+   "precision": "6",
+   "hidden": 1
+  },
+  {
+   "fieldname": "mulai_longitude",
+   "fieldtype": "Float",
+   "label": "Start Longitude",
+   "read_only": 1,
+   "precision": "6",
+   "hidden": 1
+  },
+  {
+   "fieldname": "foto_mulai",
+   "fieldtype": "Attach Image",
+   "label": "Start Selfie",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "selesai_lembur",
+   "fieldtype": "Datetime",
+   "label": "Overtime Ended",
+   "read_only": 1
+  },
+  {
+   "fieldname": "selesai_latitude",
+   "fieldtype": "Float",
+   "label": "End Latitude",
+   "read_only": 1,
+   "precision": "6",
+   "hidden": 1
+  },
+  {
+   "fieldname": "selesai_longitude",
+   "fieldtype": "Float",
+   "label": "End Longitude",
+   "read_only": 1,
+   "precision": "6",
+   "hidden": 1
+  },
+  {
+   "fieldname": "foto_selesai",
+   "fieldtype": "Attach Image",
+   "label": "End Selfie",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_realisasi",
+   "fieldtype": "Section Break",
+   "label": "Actual Hours",
+   "depends_on": "eval:doc.selesai_lembur"
+  },
+  {
+   "fieldname": "menit_realisasi",
+   "fieldtype": "Int",
+   "label": "Actual Minutes",
+   "read_only": 1
+  },
+  {
+   "fieldname": "jam_dihitung",
+   "fieldtype": "Int",
+   "label": "Counted Hours",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "tanggal_merah",
+   "fieldtype": "Check",
+   "label": "Public Holiday",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_5",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "dikonfirmasi_oleh",
+   "fieldtype": "Link",
+   "label": "Confirmed By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "dikonfirmasi_pada",
+   "fieldtype": "Datetime",
+   "label": "Confirmed On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "selesai_diisi_manual",
+   "fieldtype": "Check",
+   "label": "End Time Entered Manually",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_pjk",
+   "fieldtype": "Section Break",
+   "label": "PJK",
+   "depends_on": "eval:doc.kompensasi=='PJK' && doc.status=='Completed'"
+  },
+  {
+   "fieldname": "status_pjk",
+   "fieldtype": "Select",
+   "label": "PJK Status",
+   "options": "\nNot Taken\nTaken\nExpired",
+   "read_only": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "pjk_diambil_pada",
+   "fieldtype": "Date",
+   "label": "PJK Taken On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_catatan",
+   "fieldtype": "Section Break",
+   "label": "Notes",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "catatan",
+   "fieldtype": "Small Text",
+   "label": "Notes"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2026-11-19 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "HR",
+ "name": "Overtime Request",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "Employee",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "export": 1,
+   "email": 1,
+   "share": 1,
+   "create": 1,
+   "write": 1
+  },
+  {
+   "role": "Leave Approver",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "export": 1,
+   "email": 1,
+   "share": 1
+  },
+  {
+   "role": "HR User",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "export": 1,
+   "email": 1,
+   "share": 1,
+   "create": 1,
+   "write": 1
+  },
+  {
+   "role": "HR Manager",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "export": 1,
+   "email": 1,
+   "share": 1,
+   "create": 1,
+   "write": 1,
+   "delete": 1
+  },
+  {
+   "role": "System Manager",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "export": 1,
+   "email": 1,
+   "share": 1,
+   "create": 1,
+   "write": 1,
+   "delete": 1
+  }
+ ],
+ "sort_field": "tanggal",
+ "sort_order": "DESC",
+ "states": [
+  {
+   "title": "Pending Supervisor",
+   "color": "Orange"
+  },
+  {
+   "title": "Pending HR",
+   "color": "Orange"
+  },
+  {
+   "title": "Approved",
+   "color": "Blue"
+  },
+  {
+   "title": "In Progress",
+   "color": "Cyan"
+  },
+  {
+   "title": "Pending Confirmation",
+   "color": "Yellow"
+  },
+  {
+   "title": "Completed",
+   "color": "Green"
+  },
+  {
+   "title": "Rejected",
+   "color": "Red"
+  },
+  {
+   "title": "Cancelled",
+   "color": "Gray"
+  }
+ ],
+ "title_field": "employee_name",
+ "track_changes": 1,
+ "default_print_format": "Surat Perintah Lembur"
+}

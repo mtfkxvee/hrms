@@ -123,7 +123,18 @@
 			:max="props.maxDate"
 		/>
 
-		<!-- Time -->
+		<!-- Time (X-Sha: dipakai Overtime Request; sebelumnya tipe Time tidak punya input) -->
+		<!-- Input frappe-ui tidak mendukung type="time", jadi pakai input bawaan browser -->
+		<input
+			v-else-if="props.fieldtype === 'Time'"
+			type="time"
+			class="form-input block w-full rounded border-gray-100 bg-gray-100 text-base text-gray-800 focus:border-gray-300 focus:bg-white"
+			:value="modelValue ? String(modelValue).padStart(8, '0').slice(0, 5) : ''"
+			@input="(e) => emit('update:modelValue', e.target.value ? `${e.target.value}:00` : '')"
+			@change="(e) => emit('change', e.target.value ? `${e.target.value}:00` : '')"
+			:disabled="isReadOnly"
+		/>
+
 		<!-- Datetime -->
 		<DateTimePicker
 			v-else-if="props.fieldtype === 'Datetime'"
