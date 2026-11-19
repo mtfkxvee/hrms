@@ -16,6 +16,8 @@ export default defineConfig({
 		vue(),
 		frappeui(),
 		VitePWA({
+			// nama manifest diberi versi: Cache-Control aset 1 tahun, URL baru = langsung terbaca semua HP
+			manifestFilename: "x-people-w1.webmanifest",
 			registerType: "autoUpdate",
 			strategies: "injectManifest",
 			injectRegister: null,
@@ -29,28 +31,28 @@ export default defineConfig({
 				start_url: "/hrms",
 				description: "Aplikasi HR karyawan X-Sha: absensi, cuti, lembur, dan pengajuan",
 				theme_color: "#ffffff",
-				background_color: "#0d0814",
+				background_color: "#ffffff",
 				icons: [
 					{
-						src: "/assets/hrms/manifest/manifest-icon-192.maskable.png",
+						src: "/assets/hrms/manifest/xp-w1-icon-192.png",
 						sizes: "192x192",
 						type: "image/png",
 						purpose: "any",
 					},
 					{
-						src: "/assets/hrms/manifest/manifest-icon-192.maskable.png",
+						src: "/assets/hrms/manifest/xp-w1-icon-192.png",
 						sizes: "192x192",
 						type: "image/png",
 						purpose: "maskable",
 					},
 					{
-						src: "/assets/hrms/manifest/manifest-icon-512.maskable.png",
+						src: "/assets/hrms/manifest/xp-w1-icon-512.png",
 						sizes: "512x512",
 						type: "image/png",
 						purpose: "any",
 					},
 					{
-						src: "/assets/hrms/manifest/manifest-icon-512.maskable.png",
+						src: "/assets/hrms/manifest/xp-w1-icon-512.png",
 						sizes: "512x512",
 						type: "image/png",
 						purpose: "maskable",

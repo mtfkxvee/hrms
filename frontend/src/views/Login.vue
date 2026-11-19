@@ -3,7 +3,7 @@
 		<ion-content class="ion-padding">
 			<div class="flex h-screen w-screen flex-col justify-center bg-white">
 				<div class="flex flex-col mx-auto gap-3 items-center">
-					<img :src="'/assets/hrms/images/x-people-logo.png'" alt="X-PEOPLE" class="h-20 w-20" />
+					<img :src="'/assets/hrms/images/x-people-logo-xp-w1.png'" alt="X-PEOPLE" class="h-20 w-20" />
 					<div class="text-3xl font-semibold text-gray-900 text-center">
 						{{ __("Login to X-PEOPLE") }}
 					</div>
