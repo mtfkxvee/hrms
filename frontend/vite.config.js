@@ -24,11 +24,12 @@ export default defineConfig({
 			},
 			manifest: {
 				display: "standalone",
-				name: "Frappe HR",
-				short_name: "Frappe HR",
+				name: "X-PEOPLE",
+				short_name: "X-PEOPLE",
 				start_url: "/hrms",
-				description: "Everyday HR & Payroll operations at your fingertips",
+				description: "Aplikasi HR karyawan X-Sha: absensi, cuti, lembur, dan pengajuan",
 				theme_color: "#ffffff",
+				background_color: "#0d0814",
 				icons: [
 					{
 						src: "/assets/hrms/manifest/manifest-icon-192.maskable.png",
