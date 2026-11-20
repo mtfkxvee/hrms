@@ -30,9 +30,9 @@ def _add_pending_lembur(pending):
 	"""Lembur: atasan (persetujuan & konfirmasi realisasi) dan HRD (persetujuan tahap 2)."""
 	if not frappe.db.exists("DocType", "Overtime Request"):
 		return
-	from hrms.xsha.lembur import _hrd_users
+	from hrms.xsha.approval import final_approver_users
 
-	fields = ["name", "employee_name", "tanggal as from_date", "tanggal as to_date", "atasan", "status"]
+	fields = ["name", "employee", "employee_name", "tanggal as from_date", "tanggal as to_date", "atasan", "status"]
 	for row in frappe.get_all(
 		"Overtime Request",
 		filters={"status": ["in", ["Pending Supervisor", "Pending Confirmation"]], "atasan": ["is", "set"]},
@@ -46,8 +46,9 @@ def _add_pending_lembur(pending):
 	hrd_rows = frappe.get_all(
 		"Overtime Request", filters={"status": "Pending HR"}, fields=fields, order_by="tanggal asc"
 	)
-	for user in _hrd_users() if hrd_rows else []:
-		for row in hrd_rows:
+	for row in hrd_rows:
+		# role HRD selain pemohon; kalau tidak ada, atasan yang memproses tahap HRD
+		for user in final_approver_users(row.employee, row.atasan):
 			pending[user].append(frappe._dict(row, doctype="Overtime Request", label="Lembur (HRD)"))
 
 

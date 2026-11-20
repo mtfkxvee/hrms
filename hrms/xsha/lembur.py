@@ -391,8 +391,19 @@ def _wajib_atasan(doc):
 		)
 
 
-def _wajib_hrd():
-	if not _is_hrd():
+def _boleh_tahap_hrd(doc, user: str | None = None) -> bool:
+	"""Tahap HRD: semua role HRD (bukan orang tertentu). Kalau tidak ada HRD lain selain pemohon
+	(mis. lembur milik satu-satunya HRD), atasan pemohon yang memproses supaya tidak macet."""
+	from hrms.xsha.approval import supervisor_is_final
+
+	user = user or frappe.session.user
+	if _is_hrd(user):
+		return True
+	return bool(doc.atasan) and user == doc.atasan and supervisor_is_final(doc.employee)
+
+
+def _wajib_hrd(doc):
+	if not _boleh_tahap_hrd(doc):
 		frappe.throw(_("Only HRD can process this step."), title=_("Not HRD"))
 
 
@@ -424,7 +435,9 @@ def setujui_atasan(name: str, kompensasi: str, pjk_tanggal=None, pjk_jam_mulai=N
 	doc.disetujui_atasan_oleh = frappe.session.user
 	doc.disetujui_atasan_pada = now_datetime()
 	hasil = _simpan(doc, "setujui_atasan")
-	for hrd in _hrd_users():
+	from hrms.xsha.approval import final_approver_users
+
+	for hrd in final_approver_users(doc.employee, None):
 		_notify(doc, hrd, f"{bold('Overtime Request')} {doc.name} of {bold(doc.employee_name)} was approved by the supervisor and is waiting for HR")
 	return hasil
 
@@ -433,10 +446,10 @@ def setujui_atasan(name: str, kompensasi: str, pjk_tanggal=None, pjk_jam_mulai=N
 def setujui_hrd(name: str, ubah_ke_berbayar: int = 0):
 	doc = _ambil(name, ("Pending HR",))
 	_bukan_pemohon(doc, _("approve"))
-	_wajib_hrd()
+	_wajib_hrd(doc)
 
 	if cint(ubah_ke_berbayar):
-		if not _is_hrd():
+		if not _boleh_tahap_hrd(doc):
 			frappe.throw(_("Only HRD can change PJK to Paid Overtime."))
 		doc.kompensasi = "Paid Overtime"
 		doc.pjk_tanggal = doc.pjk_jam_mulai = doc.pjk_jam_selesai = None
@@ -467,7 +480,7 @@ def tolak(name: str, alasan: str):
 	if doc.status == "Pending Supervisor":
 		_wajib_atasan(doc)
 	else:
-		_wajib_hrd()
+		_wajib_hrd(doc)
 	if not (alasan or "").strip():
 		frappe.throw(_("Please enter a rejection reason."))
 
@@ -637,6 +650,17 @@ def get_lembur_list(employee: str | None = None, for_approval: int = 0, limit: i
 			rows += frappe.get_all(
 				DOCTYPE, filters={"status": "Pending HR"}, fields=LIST_FIELDS, order_by="creation desc", limit=limit
 			)
+		else:
+			# tahap HRD tanpa HRD lain (mis. lembur milik satu-satunya HRD): atasan yang memproses
+			from hrms.xsha.approval import supervisor_is_final
+
+			rows += [
+				r
+				for r in frappe.get_all(
+					DOCTYPE, filters={"status": "Pending HR", "atasan": user}, fields=LIST_FIELDS, order_by="creation desc"
+				)
+				if supervisor_is_final(r.employee)
+			]
 		own = set(frappe.get_all("Employee", filters={"user_id": user}, pluck="name"))
 		seen, hasil = set(), []
 		for r in sorted(rows, key=lambda x: x.creation, reverse=True):
@@ -697,7 +721,7 @@ def get_info_persetujuan(name: str) -> dict:
 	user = frappe.session.user
 	pemohon = _employee_user(doc.employee) == user
 	atasan_atau_hr = (user == doc.atasan or _is_hr(user)) and not pemohon
-	hr = _is_hrd(user) and not pemohon
+	hr = _boleh_tahap_hrd(doc, user) and not pemohon
 	return {
 		"bisa_setujui_atasan": doc.status == "Pending Supervisor" and atasan_atau_hr,
 		"bisa_setujui_hrd": doc.status == "Pending HR" and hr,

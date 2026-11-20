@@ -43,8 +43,27 @@ def is_hrd(user: str | None = None) -> bool:
 
 
 def hrd_users() -> list[str]:
+	"""Semua user aktif yang punya role HRD (bukan orang tertentu)."""
 	users = frappe.get_all("Has Role", filters={"role": HRD_ROLE, "parenttype": "User"}, pluck="parent")
+	users = [u for u in users if u not in ("Administrator", "Guest")]
 	return frappe.get_all("User", filters={"name": ["in", users or [""]], "enabled": 1}, pluck="name")
+
+
+def other_hrd_users(employee: str) -> list[str]:
+	"""User role HRD selain pemohon (HRD tidak boleh menyetujui pengajuannya sendiri)."""
+	pemohon = frappe.db.get_value("Employee", employee, "user_id")
+	return [u for u in hrd_users() if (u or "").lower() != (pemohon or "").lower()]
+
+
+def supervisor_is_final(employee: str) -> bool:
+	"""Tidak ada orang HRD lain yang bisa menyetujui (mis. pemohonnya satu-satunya HRD):
+	persetujuan atasan langsung menjadi persetujuan akhir supaya pengajuan tidak macet."""
+	return not other_hrd_users(employee)
+
+
+def final_approver_users(employee: str, approver: str | None) -> list[str]:
+	"""Siapa yang memproses tahap HRD: semua role HRD selain pemohon, atau atasan kalau tidak ada."""
+	return other_hrd_users(employee) or ([approver] if approver else [])
 
 
 def _same_user(a, b) -> bool:
@@ -55,19 +74,12 @@ def _employee_user(employee: str) -> str | None:
 	return frappe.db.get_value("Employee", employee, "user_id")
 
 
-def _requester_is_hrd(doc) -> bool:
-	"""Pemohon sendiri orang HRD: HRD tidak boleh menyetujui miliknya sendiri, jadi persetujuan
-	atasannya langsung menjadi persetujuan akhir (supaya tidak macet kalau HRD hanya 1 orang)."""
-	user = _employee_user(doc.employee)
-	return bool(user) and HRD_ROLE in frappe.get_roles(user)
-
-
 def _can_final_approve(doc, user) -> bool:
 	"""Boleh memberi persetujuan akhir (tahap HRD)."""
 	if is_hrd(user):
 		return True
 	cfg = CONFIG[doc.doctype]
-	return _requester_is_hrd(doc) and _same_user(user, doc.get(cfg.approver))
+	return supervisor_is_final(doc.employee) and _same_user(user, doc.get(cfg.approver))
 
 
 def _skip_checks() -> bool:
@@ -140,10 +152,10 @@ def approve(doctype: str, name: str) -> dict:
 	cfg = CONFIG[doctype]
 	doc.flags.ignore_permissions = True
 	doc.set(cfg.status, APPROVED)
-	if actions["stage"] == SUPERVISOR and not is_hrd() and not _requester_is_hrd(doc):
+	if actions["stage"] == SUPERVISOR and not is_hrd() and not supervisor_is_final(doc.employee):
 		doc.save()  # lanjut ke tahap HRD
 	else:
-		# HRD, atasan yang juga HRD, atau atasan dari pemohon HRD = persetujuan akhir
+		# HRD, atasan yang juga HRD, atau atasan saat tidak ada HRD lain = persetujuan akhir
 		doc.submit()
 	return {"stage": get_stage(doc), "docstatus": doc.docstatus}
 
@@ -272,6 +284,17 @@ def get_pending_for_user(doctype: str, employee: str, fields: list, limit=None, 
 			if row.name not in seen:
 				seen.add(row.name)
 				rows.append(row)
+	# tahap HRD tanpa HRD lain (mis. pengajuan milik satu-satunya HRD): atasan yang memproses
+	cfg = CONFIG[doctype]
+	for row in frappe.get_all(
+		doctype,
+		filters={"docstatus": 0, cfg.status: APPROVED, cfg.approver: user},
+		fields=fields,
+		order_by=order_by,
+	):
+		if row.name not in seen and supervisor_is_final(row.employee):
+			seen.add(row.name)
+			rows.append(row)
 	key = order_by.split()[0]
 	rows.sort(key=lambda r: (str(r.get(key) or ""), str(r.get("creation") or "")), reverse=order_by.endswith("desc"))
 	return rows[: cint(limit)] if limit else rows
@@ -280,7 +303,6 @@ def get_pending_for_user(doctype: str, employee: str, fields: list, limit=None, 
 def get_all_pending() -> list[tuple[str, dict]]:
 	"""[(user, row)] semua pengajuan yang menunggu, untuk email ringkasan harian."""
 	out = []
-	hrd = None
 	for doctype, cfg in CONFIG.items():
 		if not frappe.get_meta(doctype).has_field(cfg.status):
 			continue
@@ -300,9 +322,8 @@ def get_all_pending() -> list[tuple[str, dict]]:
 			if row.status == cfg.open and row.approver:
 				out.append((row.approver, frappe._dict(row, stage=SUPERVISOR)))
 			else:
-				hrd = hrd if hrd is not None else hrd_users()
-				pemohon = _employee_user(row.employee)
-				out.extend((u, frappe._dict(row, stage=HRD)) for u in hrd if u != pemohon)
+				users = final_approver_users(row.employee, row.approver)
+				out.extend((u, frappe._dict(row, stage=HRD)) for u in users)
 	return out
 
 
@@ -394,9 +415,9 @@ def notify_hrd_stage(doc, method=None):
 		return
 	if not frappe.db.exists("DocType", "PWA Notification"):
 		return
-	from_user, pemohon = frappe.session.user, _employee_user(doc.employee)
-	for user in hrd_users():
-		if user in (from_user, pemohon):
+	from_user = frappe.session.user
+	for user in final_approver_users(doc.employee, doc.get(cfg.approver)):
+		if user == from_user:
 			continue
 		notification = frappe.new_doc("PWA Notification")
 		notification.from_user = from_user
