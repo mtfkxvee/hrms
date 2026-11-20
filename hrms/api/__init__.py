@@ -188,6 +188,9 @@ def get_shift_requests(
 	if workflow_state_field := get_workflow_state_field("Shift Request"):
 		fields.append(workflow_state_field)
 
+	if _xsha_two_level(for_approval, "Shift Request"):
+		return _xsha_pending("Shift Request", employee, fields, limit, "creation desc")
+
 	shift_requests = frappe.get_list(
 		"Shift Request",
 		fields=fields,
@@ -209,13 +212,6 @@ def get_attendance_requests(
 	for_approval: bool = False,
 	limit: int | None = None,
 ) -> list[dict]:
-	# X-SHA: koreksi absen hanya disetujui role HRD, jadi daftar "To Approve" hanya untuk HRD
-	if frappe.utils.cint(for_approval) and frappe.session.user != "Administrator":
-		from hrms.xsha.rules import HRD_ROLE
-
-		if HRD_ROLE not in frappe.get_roles():
-			return []
-
 	filters = get_filters("Attendance Request", employee, None, for_approval)
 	fields = [
 		"name",
@@ -229,9 +225,17 @@ def get_attendance_requests(
 		"docstatus",
 		"creation",
 	]
+	# X-SHA: status persetujuan 2 lapis (custom field, lihat hrms/xsha/approval.py)
+	meta = frappe.get_meta("Attendance Request")
+	fields += [f for f in ("custom_approval_status", "custom_approver") if meta.has_field(f)]
 
 	if workflow_state_field := get_workflow_state_field("Attendance Request"):
 		fields.append(workflow_state_field)
+
+	if _xsha_two_level(for_approval, "Attendance Request"):
+		if not meta.has_field("custom_approval_status"):
+			return []
+		return _xsha_pending("Attendance Request", employee, fields, limit, "creation desc")
 
 	attendance_requests = frappe.get_list(
 		"Attendance Request",
@@ -246,6 +250,17 @@ def get_attendance_requests(
 			application["workflow_state_field"] = workflow_state_field
 
 	return attendance_requests
+
+
+def _xsha_two_level(for_approval, doctype: str) -> bool:
+	"""X-SHA: daftar To Approve cuti/shift/koreksi absen mengikuti tahap Atasan -> HRD."""
+	return bool(frappe.utils.cint(for_approval)) and not get_workflow(doctype)
+
+
+def _xsha_pending(doctype: str, employee: str, fields: list, limit, order_by: str) -> list[dict]:
+	from hrms.xsha.approval import get_pending_for_user
+
+	return get_pending_for_user(doctype, employee, fields, limit=limit, order_by=order_by)
 
 
 def get_filters(
@@ -359,11 +374,15 @@ def get_leave_applications(
 		"leave_balance",
 		"leave_approver",
 		"posting_date",
+		"docstatus",
 		"creation",
 	]
 
 	if workflow_state_field := get_workflow_state_field("Leave Application"):
 		fields.append(workflow_state_field)
+
+	if _xsha_two_level(for_approval, "Leave Application"):
+		return _xsha_pending("Leave Application", employee, fields, limit, "posting_date desc")
 
 	applications = frappe.get_list(
 		"Leave Application",

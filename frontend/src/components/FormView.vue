@@ -210,6 +210,17 @@
 					{{ __(formButton) }}
 				</Button>
 			</div>
+
+			<!-- X-SHA: leave / shift / attendance requests are approved in 2 levels (Supervisor -> HR) -->
+			<XshaApprovalActions
+				v-else-if="isTwoLevel && props.id && formModel.docstatus === 0 && documentResource?.doc"
+				:doctype="props.doctype"
+				:name="props.id"
+				:modified="documentResource.doc.modified"
+				:show-waiting="false"
+				container-class="px-4 pt-4 pb-4 standalone:pb-safe-bottom sm:w-96 bg-white sticky bottom-0 w-full drop-shadow-xl z-40 border-t rounded-t-lg"
+				@done="reloadDoc()"
+			/>
 		</div>
 	</div>
 
@@ -327,6 +338,7 @@ import {
 import FormField from "@/components/FormField.vue"
 import FileUploaderView from "@/components/FileUploaderView.vue"
 import WorkflowActionSheet from "@/components/WorkflowActionSheet.vue"
+import XshaApprovalActions from "@/components/XshaApprovalActions.vue"
 
 import { FileAttachment, guessStatusColor } from "@/composables"
 import useWorkflow from "@/composables/workflow"
@@ -592,12 +604,11 @@ const docPermissions = createResource({
 	params: { doctype: props.doctype, docname: props.id },
 })
 
-// X-SHA: koreksi absen hanya disetujui (submit) oleh role HRD, bukan pemohon sendiri.
-// Tombol Submit disembunyikan untuk yang lain (server tetap menolak).
-const canApproveAttendance = createResource({
-	url: "hrms.xsha.rules.can_approve_attendance_request",
-	params: { name: props.id },
-})
+// X-SHA: cuti, ganti shift, dan koreksi absen disetujui 2 lapis (Atasan -> HRD) lewat
+// tombol Approve/Reject (XshaApprovalActions), bukan tombol Submit bawaan (server tetap menjaga).
+const isTwoLevel = computed(() =>
+	["Leave Application", "Shift Request", "Attendance Request"].includes(props.doctype)
+)
 
 const permittedWriteFields = createResource({
 	url: "hrms.api.get_permitted_fields_for_write",
@@ -611,7 +622,7 @@ const formButton = computed(() => {
 		if (
 			formModel.value.docstatus === 0 &&
 			hasPermission("submit") &&
-			(props.doctype !== "Attendance Request" || canApproveAttendance.data)
+			!isTwoLevel.value
 		) {
 			return "Submit"
 		} else if (formModel.value.docstatus === 1 && hasPermission("cancel")) {
@@ -765,7 +776,6 @@ onMounted(async () => {
 		await documentResource.get.promise
 		formModel.value = { ...documentResource.doc }
 		await docPermissions.reload()
-		if (props.doctype === "Attendance Request") await canApproveAttendance.reload()
 		await permittedWriteFields.reload()
 		await attachedFiles.reload()
 		await setFormattedCurrency()

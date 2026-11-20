@@ -12,7 +12,6 @@ from hrms.hr.utils import get_distance_between_coordinates
 
 # Role yang boleh memproses pengajuan karyawan lain selain approver yang ditunjuk.
 HR_ROLES = ("HR Manager", "HR User")
-DECIDED_STATUSES = ("Approved", "Rejected")
 
 
 def _employee_user(employee: str) -> str | None:
@@ -24,37 +23,6 @@ def _is_hr(user: str | None = None) -> bool:
 	if user == "Administrator":
 		return True
 	return bool(set(HR_ROLES) & set(frappe.get_roles(user)))
-
-
-def _is_deciding(doc) -> bool:
-	"""True jika dokumen sedang disetujui/ditolak (status berubah, atau di-submit)."""
-	if doc.status not in DECIDED_STATUSES:
-		return False
-	if doc.docstatus == 1:
-		return True
-	return doc.is_new() or doc.has_value_changed("status")
-
-
-def _guard_decider(doc, approver_field: str, label: str):
-	"""Tolak keputusan dari pemohon sendiri, atau dari orang selain approver / HR."""
-	user = frappe.session.user
-	if user == "Administrator":
-		return
-
-	if user == _employee_user(doc.employee):
-		frappe.throw(
-			_("Anda tidak boleh menyetujui atau menolak {0} milik sendiri.").format(label),
-			title=_("Persetujuan Sendiri Tidak Diizinkan"),
-		)
-
-	approver = doc.get(approver_field)
-	if user != approver and not _is_hr(user):
-		frappe.throw(
-			_("Hanya approver yang ditunjuk ({0}) atau HR yang boleh memproses {1} ini.").format(
-				frappe.bold(approver or "-"), label
-			),
-			title=_("Bukan Approver"),
-		)
 
 
 # ---------------------------------------------------------------------------
@@ -145,13 +113,16 @@ def checkin_validate(doc, method=None):
 
 
 def shift_request_validate(doc, method=None):
-	"""S05: blokir persetujuan sendiri dan persetujuan oleh non-approver."""
-	if _is_deciding(doc):
-		_guard_decider(doc, "approver", _("pengajuan ganti shift"))
+	"""S05 + 2 lapis: atasan menyetujui dulu, lalu HRD (hrms/xsha/approval.py)."""
+	from hrms.xsha.approval import validate_decision
+
+	validate_decision(doc)
 
 
 def shift_request_before_submit(doc, method=None):
-	_guard_decider(doc, "approver", _("pengajuan ganti shift"))
+	from hrms.xsha.approval import validate_submit
+
+	validate_submit(doc)
 	if doc.status == "Approved":
 		doc.flags.xsha_shift_location = cut_shift_assignments(doc.employee, doc.from_date, doc.to_date)
 
@@ -272,8 +243,16 @@ def leave_application_validate(doc, method=None):
 				title=_("Approver Tidak Sah"),
 			)
 
-	if _is_deciding(doc):
-		_guard_decider(doc, "leave_approver", _("pengajuan izin/cuti"))
+	# 2 lapis: atasan (leave approver) menyetujui dulu, lalu HRD (hrms/xsha/approval.py)
+	from hrms.xsha.approval import validate_decision
+
+	validate_decision(doc)
+
+
+def leave_application_before_submit(doc, method=None):
+	from hrms.xsha.approval import validate_submit
+
+	validate_submit(doc)
 
 
 # ---------------------------------------------------------------------------
@@ -335,34 +314,20 @@ def employee_validate(doc, method=None):
 # ---------------------------------------------------------------------------
 
 
-HRD_ROLE = "HRD"
+from hrms.xsha.approval import HRD_ROLE  # noqa: E402 (dipakai hrms.api)
 
 
 @frappe.whitelist()
 def can_approve_attendance_request(name: str) -> bool:
-	"""Untuk aplikasi HRMS: tampilkan tombol Submit (= setujui) koreksi absen atau tidak."""
-	doc = frappe.get_doc("Attendance Request", name)
-	doc.check_permission("read")
-	user = frappe.session.user
-	if doc.docstatus != 0:
-		return False
-	if user == "Administrator":
-		return True
-	return HRD_ROLE in frappe.get_roles(user) and _employee_user(doc.employee) != user
+	"""Dipertahankan untuk aplikasi versi lama; aplikasi baru memakai hrms.xsha.approval.get_approval_actions."""
+	from hrms.xsha.approval import get_approval_actions
+
+	return get_approval_actions("Attendance Request", name)["can_approve"]
 
 
 def attendance_request_before_submit(doc, method=None):
-	"""Koreksi absen hanya disetujui (submit) oleh orang HRD (role HRD).
-	A20: HRD tidak boleh menyetujui koreksi absen miliknya sendiri."""
-	if frappe.session.user == "Administrator":
-		return
-	if HRD_ROLE not in frappe.get_roles(frappe.session.user):
-		frappe.throw(
-			_("Koreksi absen hanya bisa disetujui oleh HRD."),
-			title=_("Bukan HRD"),
-		)
-	if _employee_user(doc.employee) == frappe.session.user:
-		frappe.throw(
-			_("Anda tidak boleh menyetujui koreksi absen milik sendiri."),
-			title=_("Persetujuan Sendiri Tidak Diizinkan"),
-		)
+	"""Koreksi absen: atasan menyetujui dulu, persetujuan akhir (submit) hanya oleh HRD.
+	A20: tidak boleh menyetujui koreksi absen milik sendiri."""
+	from hrms.xsha.approval import validate_submit
+
+	validate_submit(doc)

@@ -6,25 +6,22 @@ import frappe
 from frappe import _
 from frappe.utils import format_date, get_url_to_form
 
-PENDING_SOURCES = (
-	# doctype, field approver, filter "belum diproses", label
-	("Leave Application", "leave_approver", {"status": "Open", "docstatus": 0}, "Izin / Sakit / Cuti"),
-	("Shift Request", "approver", {"status": "Draft", "docstatus": 0}, "Ganti Shift"),
-)
+LABELS = {
+	# doctype -> label di email; tahap HRD diberi akhiran " (HRD)"
+	"Leave Application": "Izin / Sakit / Cuti",
+	"Shift Request": "Ganti Shift",
+	"Attendance Request": "Koreksi Absen",
+}
 
 
 def get_pending_by_approver() -> dict[str, list[dict]]:
+	"""Pengajuan 2 lapis (hrms/xsha/approval.py): tahap atasan ke atasan, tahap HRD ke role HRD."""
+	from hrms.xsha.approval import HRD, get_all_pending
+
 	pending = defaultdict(list)
-	for doctype, approver_field, filters, label in PENDING_SOURCES:
-		rows = frappe.get_all(
-			doctype,
-			filters={**filters, approver_field: ["is", "set"]},
-			fields=["name", "employee_name", "from_date", "to_date", approver_field + " as approver"],
-			order_by="from_date asc",
-		)
-		for row in rows:
-			row.update(doctype=doctype, label=label)
-			pending[row.approver].append(row)
+	for user, row in get_all_pending():
+		label = LABELS[row.doctype] + (" (HRD)" if row.stage == HRD else "")
+		pending[user].append(frappe._dict(row, label=label))
 	_add_pending_lembur(pending)
 	return pending
 

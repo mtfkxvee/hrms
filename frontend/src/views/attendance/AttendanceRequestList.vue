@@ -16,7 +16,8 @@ import { inject } from "vue"
 
 const __ = inject("$translate")
 
-const ATTENDANCE_REQUEST_FIELDS = ["name", "reason", "from_date", "to_date", "docstatus"]
+// X-SHA: custom_approval_status = tahap persetujuan 2 lapis (hrms/xsha/approval.py)
+const ATTENDANCE_REQUEST_FIELDS = ["name", "reason", "from_date", "to_date", "docstatus", "custom_approval_status"]
 const FILTER_CONFIG = [
 	{
 		fieldname: "shift",

@@ -46,11 +46,19 @@ const props = defineProps({
 
 const status = computed(() => {
 	if (props.workflowStateField) return props.doc[props.workflowStateField]
-	return props.doc.docstatus ? "Submitted" : "Draft"
+	// X-SHA: 2-level approval (Supervisor -> HR), see hrms/xsha/approval.py
+	if (props.doc.docstatus === 1) return "Approved"
+	const approval = props.doc.custom_approval_status
+	if (approval === "Rejected") return "Rejected"
+	if (approval === "Approved") return "Pending HR"
+	return approval ? "Open" : "Draft"
 })
 
 const colorMap = {
 	Draft: "gray",
-	Submitted: "blue",
+	Open: "orange",
+	"Pending HR": "orange",
+	Approved: "green",
+	Rejected: "red",
 }
 </script>

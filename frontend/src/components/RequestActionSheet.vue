@@ -80,6 +80,16 @@
 			view="actionSheet"
 		/>
 
+		<!-- X-SHA: leave / shift / attendance requests are approved in 2 levels (Supervisor -> HR) -->
+		<XshaApprovalActions
+			v-else-if="isTwoLevel && document?.doc?.docstatus === 0"
+			:doctype="document.doc.doctype"
+			:name="document.doc.name"
+			:modified="document.doc.modified"
+			container-class="flex w-full flex-row items-center justify-between gap-3 sticky bottom-0 border-t z-[100] p-4"
+			@done="onApprovalDone"
+		/>
+
 		<div
 			v-else-if="['Open', 'Draft'].includes(document?.doc?.[approvalField]) && hasPermission('approval')"
 			class="flex w-full flex-row items-center justify-between gap-3 sticky bottom-0 border-t z-[100] p-4"
@@ -169,6 +179,7 @@ import {
 import FormattedField from "@/components/FormattedField.vue"
 import FilePreviewModal from "@/components/FilePreviewModal.vue"
 import WorkflowActionSheet from "@/components/WorkflowActionSheet.vue"
+import XshaApprovalActions from "@/components/XshaApprovalActions.vue"
 
 import { getCompanyCurrency } from "@/data/currencies"
 import { formatCurrency } from "@/utils/formatters"
@@ -268,6 +279,14 @@ const fieldsWithValues = computed(() => {
 		return field.value
 	})
 })
+
+const TWO_LEVEL_DOCTYPES = ["Leave Application", "Shift Request", "Attendance Request"]
+const isTwoLevel = computed(() => TWO_LEVEL_DOCTYPES.includes(props.modelValue.doctype))
+
+function onApprovalDone() {
+	document.reload()
+	modalController.dismiss()
+}
 
 const approvalField = computed(() => {
 	return props.modelValue.doctype === "Expense Claim"

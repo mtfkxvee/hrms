@@ -235,8 +235,15 @@ doc_events = {
 		"before_submit": "hrms.xsha.rules.shift_request_before_submit",
 		"on_submit": "hrms.xsha.rules.shift_request_on_submit",
 	},
-	"Leave Application": {"validate": "hrms.xsha.rules.leave_application_validate"},
-	"Attendance Request": {"before_submit": "hrms.xsha.rules.attendance_request_before_submit"},
+	"Leave Application": {
+		"validate": "hrms.xsha.rules.leave_application_validate",
+		"before_submit": "hrms.xsha.rules.leave_application_before_submit",
+	},
+	"Attendance Request": {
+		"validate": "hrms.xsha.approval.attendance_request_validate",
+		"on_update": "hrms.xsha.approval.attendance_request_on_update",
+		"before_submit": "hrms.xsha.rules.attendance_request_before_submit",
+	},
 	# X-Sha: pulang lebih awal karena PJK lembur tidak dihitung pulang cepat
 	"Attendance": {
 		"before_submit": "hrms.xsha.lembur.attendance_before_submit",

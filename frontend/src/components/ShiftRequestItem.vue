@@ -50,6 +50,8 @@ const props = defineProps({
 
 const status = computed(() => {
 	if (props.workflowStateField) return props.doc[props.workflowStateField]
+	// X-SHA: approved by supervisor, waiting for HR (2-level approval)
+	if (!props.doc.docstatus && props.doc.status === "Approved") return "Pending HR"
 	return props.doc.docstatus ? props.doc.status : "Open"
 })
 
@@ -57,5 +59,6 @@ const colorMap = {
 	Approved: "green",
 	Rejected: "red",
 	Open: "orange",
+	"Pending HR": "orange",
 }
 </script>
