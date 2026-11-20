@@ -88,7 +88,7 @@
 					v-if="photoPreview"
 					:src="photoPreview"
 					class="w-full max-w-xs rounded-lg border"
-					style="max-height: 200px; object-fit: cover"
+					style="max-height: 200px; object-fit: cover; transform: scaleX(-1)"
 				/>
 				<video
 					v-show="cameraActive && !photoPreview"
@@ -96,7 +96,7 @@
 					autoplay
 					playsinline
 					class="w-full max-w-xs rounded-lg border"
-					style="max-height: 200px; object-fit: cover"
+					style="max-height: 200px; object-fit: cover; transform: scaleX(-1)"
 				></video>
 				<canvas ref="canvasRef" style="display: none"></canvas>
 

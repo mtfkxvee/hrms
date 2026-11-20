@@ -44,7 +44,7 @@
 					v-if="s.photoPreview.value"
 					:src="s.photoPreview.value"
 					class="w-full max-w-xs rounded-lg border"
-					style="max-height: 200px; object-fit: cover"
+					style="max-height: 200px; object-fit: cover; transform: scaleX(-1)"
 				/>
 				<video
 					v-show="s.cameraActive.value && !s.photoPreview.value"
@@ -52,7 +52,7 @@
 					autoplay
 					playsinline
 					class="w-full max-w-xs rounded-lg border"
-					style="max-height: 200px; object-fit: cover"
+					style="max-height: 200px; object-fit: cover; transform: scaleX(-1)"
 				></video>
 				<canvas :ref="(el) => (s.canvasRef.value = el)" style="display: none"></canvas>
 				<div class="flex gap-2 w-full">
