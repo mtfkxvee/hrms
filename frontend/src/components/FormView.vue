@@ -592,6 +592,13 @@ const docPermissions = createResource({
 	params: { doctype: props.doctype, docname: props.id },
 })
 
+// X-SHA: koreksi absen hanya disetujui (submit) oleh role HRD, bukan pemohon sendiri.
+// Tombol Submit disembunyikan untuk yang lain (server tetap menolak).
+const canApproveAttendance = createResource({
+	url: "hrms.xsha.rules.can_approve_attendance_request",
+	params: { name: props.id },
+})
+
 const permittedWriteFields = createResource({
 	url: "hrms.api.get_permitted_fields_for_write",
 	params: { doctype: props.doctype },
@@ -601,7 +608,11 @@ const formButton = computed(() => {
 	if (!props.showFormButton) return
 
 	if (props.id && props.isSubmittable && !isFormDirty.value) {
-		if (formModel.value.docstatus === 0 && hasPermission("submit")) {
+		if (
+			formModel.value.docstatus === 0 &&
+			hasPermission("submit") &&
+			(props.doctype !== "Attendance Request" || canApproveAttendance.data)
+		) {
 			return "Submit"
 		} else if (formModel.value.docstatus === 1 && hasPermission("cancel")) {
 			return "Cancel"
@@ -754,6 +765,7 @@ onMounted(async () => {
 		await documentResource.get.promise
 		formModel.value = { ...documentResource.doc }
 		await docPermissions.reload()
+		if (props.doctype === "Attendance Request") await canApproveAttendance.reload()
 		await permittedWriteFields.reload()
 		await attachedFiles.reload()
 		await setFormattedCurrency()

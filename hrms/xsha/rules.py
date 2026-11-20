@@ -338,6 +338,19 @@ def employee_validate(doc, method=None):
 HRD_ROLE = "HRD"
 
 
+@frappe.whitelist()
+def can_approve_attendance_request(name: str) -> bool:
+	"""Untuk aplikasi HRMS: tampilkan tombol Submit (= setujui) koreksi absen atau tidak."""
+	doc = frappe.get_doc("Attendance Request", name)
+	doc.check_permission("read")
+	user = frappe.session.user
+	if doc.docstatus != 0:
+		return False
+	if user == "Administrator":
+		return True
+	return HRD_ROLE in frappe.get_roles(user) and _employee_user(doc.employee) != user
+
+
 def attendance_request_before_submit(doc, method=None):
 	"""Koreksi absen hanya disetujui (submit) oleh orang HRD (role HRD).
 	A20: HRD tidak boleh menyetujui koreksi absen miliknya sendiri."""

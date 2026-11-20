@@ -209,6 +209,13 @@ def get_attendance_requests(
 	for_approval: bool = False,
 	limit: int | None = None,
 ) -> list[dict]:
+	# X-SHA: koreksi absen hanya disetujui role HRD, jadi daftar "To Approve" hanya untuk HRD
+	if frappe.utils.cint(for_approval) and frappe.session.user != "Administrator":
+		from hrms.xsha.rules import HRD_ROLE
+
+		if HRD_ROLE not in frappe.get_roles():
+			return []
+
 	filters = get_filters("Attendance Request", employee, None, for_approval)
 	fields = [
 		"name",
