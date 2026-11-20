@@ -345,6 +345,8 @@ def notify_final_approval(doc, method=None):
 	cfg = CONFIG[doc.doctype]
 	if doc.get(cfg.status) != APPROVED or not frappe.db.exists("DocType", "PWA Notification"):
 		return
+	if doc.doctype != "Attendance Request" and doc.has_value_changed(cfg.status):
+		return  # status baru berubah di submit ini: notifikasi bawaan "Approved" sudah terkirim
 	from_user, to_user = frappe.session.user, _employee_user(doc.employee)
 	if not to_user or to_user == from_user:
 		return

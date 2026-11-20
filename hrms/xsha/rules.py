@@ -314,9 +314,6 @@ def employee_validate(doc, method=None):
 # ---------------------------------------------------------------------------
 
 
-from hrms.xsha.approval import HRD_ROLE  # noqa: E402 (dipakai hrms.api)
-
-
 @frappe.whitelist()
 def can_approve_attendance_request(name: str) -> bool:
 	"""Dipertahankan untuk aplikasi versi lama; aplikasi baru memakai hrms.xsha.approval.get_approval_actions."""

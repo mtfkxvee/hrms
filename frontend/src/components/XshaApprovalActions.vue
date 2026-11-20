@@ -45,8 +45,10 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from "vue"
+import { computed, inject, ref, watch } from "vue"
 import { Button, FeatherIcon, createResource, toast } from "frappe-ui"
+
+const __ = inject("$translate")
 
 const API = "hrms.xsha.approval."
 
