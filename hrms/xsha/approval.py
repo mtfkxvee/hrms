@@ -310,3 +310,45 @@ def attendance_request_on_update(doc, method=None):
 		frappe.share.add_docshare(
 			doc.doctype, doc.name, approver, read=1, flags={"ignore_share_permission": True}, notify=0
 		)
+
+
+# ---------------------------------------------------------------------------
+# Notifikasi aplikasi ke karyawan
+# ---------------------------------------------------------------------------
+
+
+def pwa_notification_before_insert(doc, method=None):
+	"""Notifikasi bawaan "has been Approved" terkirim saat atasan menyetujui (status -> Approved),
+	padahal pengajuan masih menunggu HRD. Ubah pesannya supaya karyawan tidak salah paham."""
+	if doc.reference_document_type not in CONFIG or not doc.reference_document_name:
+		return
+	cfg = CONFIG[doc.reference_document_type]
+	values = frappe.db.get_value(
+		doc.reference_document_type, doc.reference_document_name, ["docstatus", cfg.status], as_dict=True
+	)
+	if values and values.docstatus == 0 and values.get(cfg.status) == APPROVED:
+		doc.message = (
+			f"{frappe.bold('Your')} {frappe.bold(doc.reference_document_type)} {doc.reference_document_name}"
+			f" has been approved by your supervisor ({frappe.bold(frappe.utils.get_fullname(doc.from_user))})"
+			" and is waiting for HR approval"
+		)
+
+
+def notify_final_approval(doc, method=None):
+	"""on_submit: kabari karyawan di aplikasi bahwa HRD sudah menyetujui (persetujuan akhir)."""
+	cfg = CONFIG[doc.doctype]
+	if doc.get(cfg.status) != APPROVED or not frappe.db.exists("DocType", "PWA Notification"):
+		return
+	from_user, to_user = frappe.session.user, _employee_user(doc.employee)
+	if not to_user or to_user == from_user:
+		return
+	notification = frappe.new_doc("PWA Notification")
+	notification.from_user = from_user
+	notification.to_user = to_user
+	notification.message = (
+		f"{frappe.bold('Your')} {frappe.bold(doc.doctype)} {doc.name} has been {frappe.bold('Approved')}"
+		f" by HR ({frappe.bold(frappe.utils.get_fullname(from_user))})"
+	)
+	notification.reference_document_type = doc.doctype
+	notification.reference_document_name = doc.name
+	notification.insert(ignore_permissions=True)
