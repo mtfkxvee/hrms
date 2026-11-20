@@ -55,6 +55,21 @@ def _employee_user(employee: str) -> str | None:
 	return frappe.db.get_value("Employee", employee, "user_id")
 
 
+def _requester_is_hrd(doc) -> bool:
+	"""Pemohon sendiri orang HRD: HRD tidak boleh menyetujui miliknya sendiri, jadi persetujuan
+	atasannya langsung menjadi persetujuan akhir (supaya tidak macet kalau HRD hanya 1 orang)."""
+	user = _employee_user(doc.employee)
+	return bool(user) and HRD_ROLE in frappe.get_roles(user)
+
+
+def _can_final_approve(doc, user) -> bool:
+	"""Boleh memberi persetujuan akhir (tahap HRD)."""
+	if is_hrd(user):
+		return True
+	cfg = CONFIG[doc.doctype]
+	return _requester_is_hrd(doc) and _same_user(user, doc.get(cfg.approver))
+
+
 def _skip_checks() -> bool:
 	return frappe.session.user == "Administrator" or bool(
 		frappe.flags.in_import or frappe.flags.in_patch or frappe.flags.in_migrate or frappe.flags.in_install
@@ -89,7 +104,7 @@ def get_actions(doc, user: str | None = None) -> dict:
 		elif stage == SUPERVISOR:
 			allowed = _same_user(user, doc.get(cfg.approver))
 		else:
-			allowed = is_hrd(user)
+			allowed = _can_final_approve(doc, user)
 	return {
 		"stage": stage,
 		"approver": doc.get(cfg.approver),
@@ -125,10 +140,11 @@ def approve(doctype: str, name: str) -> dict:
 	cfg = CONFIG[doctype]
 	doc.flags.ignore_permissions = True
 	doc.set(cfg.status, APPROVED)
-	if actions["stage"] == SUPERVISOR and not is_hrd():
+	if actions["stage"] == SUPERVISOR and not is_hrd() and not _requester_is_hrd(doc):
 		doc.save()  # lanjut ke tahap HRD
 	else:
-		doc.submit()  # HRD (atau atasan yang juga HRD) = persetujuan akhir
+		# HRD, atasan yang juga HRD, atau atasan dari pemohon HRD = persetujuan akhir
+		doc.submit()
 	return {"stage": get_stage(doc), "docstatus": doc.docstatus}
 
 
@@ -196,7 +212,7 @@ def validate_decision(doc):
 	if prev_stage == SUPERVISOR:
 		if not _same_user(user, doc.get(cfg.approver)):
 			_throw_not_allowed(doc, SUPERVISOR)
-	elif not is_hrd(user):
+	elif not _can_final_approve(doc, user):
 		# tahap HRD, atau mengubah keputusan yang sudah ada
 		_throw_not_allowed(doc, HRD)
 
@@ -227,7 +243,7 @@ def validate_submit(doc):
 		if doc.doctype == "Attendance Request":
 			doc.set(cfg.status, APPROVED)
 
-	if not is_hrd(user):
+	if not _can_final_approve(doc, user):
 		_throw_not_allowed(doc, HRD)
 
 
@@ -268,7 +284,15 @@ def get_all_pending() -> list[tuple[str, dict]]:
 	for doctype, cfg in CONFIG.items():
 		if not frappe.get_meta(doctype).has_field(cfg.status):
 			continue
-		fields = ["name", "employee_name", "from_date", "to_date", f"{cfg.approver} as approver", f"{cfg.status} as status"]
+		fields = [
+			"name",
+			"employee",
+			"employee_name",
+			"from_date",
+			"to_date",
+			f"{cfg.approver} as approver",
+			f"{cfg.status} as status",
+		]
 		for row in frappe.get_all(
 			doctype, filters={"docstatus": 0, cfg.status: ["in", [cfg.open, APPROVED]]}, fields=fields, order_by="from_date asc"
 		):
@@ -277,7 +301,8 @@ def get_all_pending() -> list[tuple[str, dict]]:
 				out.append((row.approver, frappe._dict(row, stage=SUPERVISOR)))
 			else:
 				hrd = hrd if hrd is not None else hrd_users()
-				out.extend((u, frappe._dict(row, stage=HRD)) for u in hrd)
+				pemohon = _employee_user(row.employee)
+				out.extend((u, frappe._dict(row, stage=HRD)) for u in hrd if u != pemohon)
 	return out
 
 
