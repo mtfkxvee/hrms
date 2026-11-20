@@ -168,7 +168,8 @@ function getFilteredFields(fields) {
 }
 
 function setFormReadOnly() {
-	if (leaveApplication.value.leave_approver === sessionEmployee.data.user_id) return
+	// X-SHA: persetujuan 2 lapis lewat tombol Approve/Reject (XshaApprovalActions),
+	// jadi approver juga tidak mengubah status/isi pengajuan karyawan lain di form
 	formFields.data.map((field) => (field.read_only = true))
 }
 

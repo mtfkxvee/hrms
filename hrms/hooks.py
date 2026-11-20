@@ -232,6 +232,7 @@ doc_events = {
 	},
 	"Shift Request": {
 		"validate": "hrms.xsha.rules.shift_request_validate",
+		"on_update": "hrms.xsha.approval.notify_hrd_stage",
 		"before_submit": "hrms.xsha.rules.shift_request_before_submit",
 		"on_submit": [
 			"hrms.xsha.rules.shift_request_on_submit",
@@ -240,6 +241,7 @@ doc_events = {
 	},
 	"Leave Application": {
 		"validate": "hrms.xsha.rules.leave_application_validate",
+		"on_update": "hrms.xsha.approval.notify_hrd_stage",
 		"before_submit": "hrms.xsha.rules.leave_application_before_submit",
 		"on_submit": "hrms.xsha.approval.notify_final_approval",
 	},

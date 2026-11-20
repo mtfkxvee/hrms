@@ -305,6 +305,7 @@ def attendance_request_validate(doc, method=None):
 
 def attendance_request_on_update(doc, method=None):
 	"""Bagikan dokumen ke atasan supaya bisa dibuka di aplikasi (seperti cuti/shift)."""
+	notify_hrd_stage(doc)
 	approver = doc.get("custom_approver")
 	if approver and not frappe.has_permission(doc=doc, ptype="read", user=approver):
 		frappe.share.add_docshare(
@@ -324,9 +325,14 @@ def pwa_notification_before_insert(doc, method=None):
 		return
 	cfg = CONFIG[doc.reference_document_type]
 	values = frappe.db.get_value(
-		doc.reference_document_type, doc.reference_document_name, ["docstatus", cfg.status], as_dict=True
+		doc.reference_document_type,
+		doc.reference_document_name,
+		["docstatus", "employee", cfg.status],
+		as_dict=True,
 	)
-	if values and values.docstatus == 0 and values.get(cfg.status) == APPROVED:
+	if not values or doc.to_user != _employee_user(values.employee):
+		return  # hanya notifikasi ke pemohon (bukan notifikasi ke HRD)
+	if values.docstatus == 0 and values.get(cfg.status) == APPROVED:
 		doc.message = (
 			f"{frappe.bold('Your')} {frappe.bold(doc.reference_document_type)} {doc.reference_document_name}"
 			f" has been approved by your supervisor ({frappe.bold(frappe.utils.get_fullname(doc.from_user))})"
@@ -352,3 +358,26 @@ def notify_final_approval(doc, method=None):
 	notification.reference_document_type = doc.doctype
 	notification.reference_document_name = doc.name
 	notification.insert(ignore_permissions=True)
+
+
+def notify_hrd_stage(doc, method=None):
+	"""on_update: setelah atasan menyetujui, kabari orang HRD di aplikasi (selain WA dan email harian)."""
+	cfg = CONFIG[doc.doctype]
+	if doc.docstatus != 0 or doc.get(cfg.status) != APPROVED or not doc.has_value_changed(cfg.status):
+		return
+	if not frappe.db.exists("DocType", "PWA Notification"):
+		return
+	from_user, pemohon = frappe.session.user, _employee_user(doc.employee)
+	for user in hrd_users():
+		if user in (from_user, pemohon):
+			continue
+		notification = frappe.new_doc("PWA Notification")
+		notification.from_user = from_user
+		notification.to_user = user
+		notification.message = (
+			f"{frappe.bold(doc.employee_name)}'s {frappe.bold(doc.doctype)} {doc.name} was approved by the"
+			" supervisor and is waiting for your approval (HR)"
+		)
+		notification.reference_document_type = doc.doctype
+		notification.reference_document_name = doc.name
+		notification.insert(ignore_permissions=True)

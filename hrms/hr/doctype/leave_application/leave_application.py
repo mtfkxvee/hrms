@@ -1096,7 +1096,14 @@ def get_leaves_pending_approval_for_period(
 	"""Returns leaves that are pending for approval"""
 	leaves = frappe.get_all(
 		"Leave Application",
-		filters={"employee": employee, "leave_type": leave_type, "status": "Open"},
+		# X-SHA: persetujuan 2 lapis, cuti yang sudah disetujui atasan tapi belum disubmit HRD
+		# (status Approved, Draft) juga masih menunggu persetujuan
+		filters={
+			"employee": employee,
+			"leave_type": leave_type,
+			"status": ["in", ["Open", "Approved"]],
+			"docstatus": 0,
+		},
 		or_filters={
 			"from_date": ["between", (from_date, to_date)],
 			"to_date": ["between", (from_date, to_date)],
