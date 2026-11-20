@@ -21,7 +21,7 @@
 			</div>
 
 			<div v-if="d.saldo_pjk_penuh" class="rounded bg-yellow-50 text-yellow-800 text-sm p-3">
-				{{ __("This employee's PJK balance would exceed 9 hours. HR can reject it, or the HR Manager can approve it as Paid Overtime.") }}
+				{{ __("This employee's PJK balance would exceed 9 hours. HRD can reject it, or approve it as Paid Overtime.") }}
 			</div>
 			<div v-if="d.status === 'Rejected' && d.alasan_penolakan" class="rounded bg-red-50 text-red-800 text-sm p-3">
 				{{ __("Rejected: {0}", [d.alasan_penolakan]) }}

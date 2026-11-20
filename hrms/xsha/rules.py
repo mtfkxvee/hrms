@@ -335,10 +335,19 @@ def employee_validate(doc, method=None):
 # ---------------------------------------------------------------------------
 
 
+HRD_ROLE = "HRD"
+
+
 def attendance_request_before_submit(doc, method=None):
-	"""A20: HR tidak boleh menyetujui koreksi absen miliknya sendiri."""
+	"""Koreksi absen hanya disetujui (submit) oleh orang HRD (role HRD).
+	A20: HRD tidak boleh menyetujui koreksi absen miliknya sendiri."""
 	if frappe.session.user == "Administrator":
 		return
+	if HRD_ROLE not in frappe.get_roles(frappe.session.user):
+		frappe.throw(
+			_("Koreksi absen hanya bisa disetujui oleh HRD."),
+			title=_("Bukan HRD"),
+		)
 	if _employee_user(doc.employee) == frappe.session.user:
 		frappe.throw(
 			_("Anda tidak boleh menyetujui koreksi absen milik sendiri."),

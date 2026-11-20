@@ -42,6 +42,9 @@ FOTO_FIELD = {"mulai": "foto_mulai", "selesai": "foto_selesai"}
 
 STATUS_AKTIF = ("Pending Supervisor", "Pending HR", "Approved", "In Progress", "Pending Confirmation", "Completed")
 HR_MANAGER_ROLE = "HR Manager"
+# Persetujuan tahap HRD hanya untuk role ini (diberikan ke orang HRD saja),
+# bukan HR User / HR Manager yang juga dipegang IT, Admin GA, dsb.
+HRD_ROLE = "HRD"
 
 
 # ---------------------------------------------------------------------------
@@ -94,15 +97,17 @@ def rentang_bertumpuk(a_mulai, a_selesai, b_mulai, b_selesai) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _is_hrd(user: str | None = None) -> bool:
+	"""Orang HRD (role HRD): yang memproses tahap HRD lembur."""
+	user = user or frappe.session.user
+	return user == "Administrator" or HRD_ROLE in frappe.get_roles(user)
+
+
 def _is_hr(user: str | None = None) -> bool:
+	"""Akses umum HR (lihat semua lembur, bantu proses tahap atasan): role HR atau HRD."""
 	from hrms.xsha.rules import _is_hr as is_hr
 
-	return is_hr(user)
-
-
-def _is_hr_manager(user: str | None = None) -> bool:
-	user = user or frappe.session.user
-	return user == "Administrator" or HR_MANAGER_ROLE in frappe.get_roles(user)
+	return is_hr(user) or _is_hrd(user)
 
 
 def _employee_user(employee: str) -> str | None:
@@ -185,7 +190,7 @@ def _notify(doc, to_user: str | None, message: str):
 def _hrd_users() -> list[str]:
 	users = frappe.get_all(
 		"Has Role",
-		filters={"role": ["in", ["HR User", HR_MANAGER_ROLE]], "parenttype": "User"},
+		filters={"role": HRD_ROLE, "parenttype": "User"},
 		pluck="parent",
 		distinct=True,
 	)
@@ -387,8 +392,8 @@ def _wajib_atasan(doc):
 
 
 def _wajib_hrd():
-	if not _is_hr():
-		frappe.throw(_("Only HR can process this step."), title=_("Not HR"))
+	if not _is_hrd():
+		frappe.throw(_("Only HRD can process this step."), title=_("Not HRD"))
 
 
 @frappe.whitelist(methods=["POST"])
@@ -431,15 +436,15 @@ def setujui_hrd(name: str, ubah_ke_berbayar: int = 0):
 	_wajib_hrd()
 
 	if cint(ubah_ke_berbayar):
-		if not _is_hr_manager():
-			frappe.throw(_("Only the HR Manager can change PJK to Paid Overtime."))
+		if not _is_hrd():
+			frappe.throw(_("Only HRD can change PJK to Paid Overtime."))
 		doc.kompensasi = "Paid Overtime"
 		doc.pjk_tanggal = doc.pjk_jam_mulai = doc.pjk_jam_selesai = None
 		doc.saldo_pjk_penuh = 0
 	elif doc.kompensasi == "PJK" and doc.saldo_pjk_penuh:
 		frappe.throw(
 			_(
-				"This employee's PJK balance would exceed {0} hours. Reject the request, or the HR Manager can approve it as Paid Overtime."
+				"This employee's PJK balance would exceed {0} hours. Reject the request, or HRD can approve it as Paid Overtime."
 			).format(SALDO_PJK_MAKS),
 			title=_("PJK Balance Exceeded"),
 		)
@@ -628,7 +633,7 @@ def get_lembur_list(employee: str | None = None, for_approval: int = 0, limit: i
 		rows = frappe.get_all(
 			DOCTYPE, filters=filters, or_filters=or_filters, fields=LIST_FIELDS, order_by="creation desc", limit=limit
 		)
-		if _is_hr(user):
+		if _is_hrd(user):
 			rows += frappe.get_all(
 				DOCTYPE, filters={"status": "Pending HR"}, fields=LIST_FIELDS, order_by="creation desc", limit=limit
 			)
@@ -692,11 +697,11 @@ def get_info_persetujuan(name: str) -> dict:
 	user = frappe.session.user
 	pemohon = _employee_user(doc.employee) == user
 	atasan_atau_hr = (user == doc.atasan or _is_hr(user)) and not pemohon
-	hr = _is_hr(user) and not pemohon
+	hr = _is_hrd(user) and not pemohon
 	return {
 		"bisa_setujui_atasan": doc.status == "Pending Supervisor" and atasan_atau_hr,
 		"bisa_setujui_hrd": doc.status == "Pending HR" and hr,
-		"bisa_ubah_ke_berbayar": doc.status == "Pending HR" and hr and _is_hr_manager(user),
+		"bisa_ubah_ke_berbayar": doc.status == "Pending HR" and hr,
 		"bisa_tolak": (doc.status == "Pending Supervisor" and atasan_atau_hr) or (doc.status == "Pending HR" and hr),
 		"bisa_konfirmasi": doc.status in ("Pending Confirmation", "In Progress") and atasan_atau_hr,
 		"bisa_batalkan": doc.status in ("Pending Supervisor", "Pending HR", "Approved") and (pemohon or _is_hr(user)),
