@@ -18,13 +18,26 @@
 							type="text"
 							autocomplete="username"
 						/>
-						<Input
-							:label="__('Password')"
-							type="password"
-							placeholder="••••••"
-							v-model="password"
-							autocomplete="current-password"
-						/>
+						<!-- X-SHA: ikon mata untuk melihat / menyembunyikan password yang diketik -->
+						<div class="relative">
+							<Input
+								:label="__('Password')"
+								:type="showPassword ? 'text' : 'password'"
+								placeholder="••••••"
+								v-model="password"
+								autocomplete="current-password"
+								inputClass="pr-10"
+							/>
+							<button
+								type="button"
+								class="absolute right-0 bottom-0 flex h-7 items-center px-2.5 text-gray-500"
+								:aria-label="showPassword ? __('Hide password') : __('Show password')"
+								@mousedown.prevent
+								@click="showPassword = !showPassword"
+							>
+								<FeatherIcon :name="showPassword ? 'eye-off' : 'eye'" class="h-4 w-4" />
+							</button>
+						</div>
 						<ErrorMessage :message="errorMessage" />
 						<Button
 							:loading="session.login.loading"
@@ -109,11 +122,12 @@
 <script setup>
 import { IonPage, IonContent } from "@ionic/vue"
 import { inject, reactive, ref } from "vue"
-import { Input, Button, ErrorMessage, Dialog, createResource } from "frappe-ui"
+import { Input, Button, ErrorMessage, Dialog, FeatherIcon, createResource } from "frappe-ui"
 
 
 const email = ref(null)
 const password = ref(null)
+const showPassword = ref(false)
 const errorMessage = ref("")
 
 const resetPassword = reactive({
