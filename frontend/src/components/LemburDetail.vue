@@ -45,8 +45,11 @@
 					{{ __("Employee PJK balance: {0} hrs (+{1} hrs in process), limit {2} hrs", [info.data.saldo_pjk.saldo, info.data.saldo_pjk.rencana, info.data.saldo_pjk.batas]) }}
 				</div>
 				<template v-if="kompensasi === 'PJK'">
-					<label class="text-sm text-gray-600">{{ __("PJK Date (leave early)") }}</label>
+					<label class="text-sm text-gray-600">{{ __("PJK Date") }}</label>
 					<input type="date" v-model="pjkTanggal" :min="minPjk" class="w-full rounded border-gray-300 text-base" />
+					<div class="text-xs text-gray-500">
+						{{ __("PJK at the start of the shift = may arrive later; at the end of the shift = may leave earlier.") }}
+					</div>
 					<div class="flex flex-row gap-2">
 						<div class="flex-1 flex flex-col gap-1">
 							<label class="text-sm text-gray-600">{{ __("From Time") }}</label>

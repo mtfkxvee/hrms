@@ -771,28 +771,87 @@ def _pjk_hari_itu(employee: str, tanggal):
 	)
 
 
+def _pjk_di_awal_shift(p, shift_start, shift_end) -> bool:
+	"""PJK di awal shift (boleh datang lebih siang) bila jam mulainya sebelum tengah shift.
+
+	PJK lama tanpa jam mulai dianggap di akhir shift (pulang lebih awal), seperti aturan sebelumnya.
+	"""
+	if not p.pjk_jam_mulai:
+		return False
+	mulai = datetime.datetime.combine(shift_start.date(), datetime.time()) + _as_timedelta(p.pjk_jam_mulai)
+	if mulai < shift_start - datetime.timedelta(hours=12):
+		mulai += datetime.timedelta(days=1)  # shift malam: PJK setelah tengah malam
+	return mulai < shift_start + (shift_end - shift_start) / 2
+
+
+def _rentang_shift(shift_type: str, tanggal):
+	"""(mulai, selesai, toleransi telat, toleransi pulang cepat) shift pada tanggal itu, atau None."""
+	row = frappe.db.get_value(
+		"Shift Type", shift_type, ["start_time", "end_time", "late_entry_grace_period", "early_exit_grace_period"]
+	)
+	if not row or row[0] is None or row[1] is None:
+		return None
+	base = datetime.datetime.combine(getdate(tanggal), datetime.time())
+	shift_start = base + _as_timedelta(row[0])
+	shift_end = base + _as_timedelta(row[1])
+	if shift_end <= shift_start:
+		shift_end += datetime.timedelta(days=1)  # shift melewati tengah malam
+	return shift_start, shift_end, cint(row[2]), cint(row[3])
+
+
+def menit_pjk_awal(employee: str, tanggal, shift_type: str) -> int:
+	"""Jatah datang lebih siang (menit) dari PJK awal shift yang belum diambil. Dipakai HR Dashboard."""
+	if not (employee and tanggal and shift_type):
+		return 0
+	pjk = _pjk_hari_itu(employee, tanggal)
+	shift = _rentang_shift(shift_type, tanggal) if pjk else None
+	if not shift:
+		return 0
+	return 60 * sum(cint(p.jam_dihitung) for p in pjk if _pjk_di_awal_shift(p, shift[0], shift[1]))
+
+
 def attendance_before_submit(doc, method=None):
-	"""Pulang lebih awal karena PJK tidak ditandai pulang cepat, dan PJK tercatat diambil."""
-	if not doc.employee or not doc.attendance_date:
+	"""PJK lembur dipakai di hari absensi dan PJK tercatat diambil.
+
+	- PJK di awal shift: datang terlambat sampai jatah jam PJK (+ toleransi telat) tidak dihitung telat.
+	- PJK di akhir shift: pulang lebih awal dalam jatah jam PJK (- toleransi) tidak dihitung pulang cepat.
+	Datang/pulang normal (PJK tidak dipakai) tidak mengubah apa pun; PJK hangus esok harinya.
+	"""
+	if not doc.employee or not doc.attendance_date or not doc.shift:
 		return
 	pjk = _pjk_hari_itu(doc.employee, doc.attendance_date)
-	if not pjk or not doc.out_time or not doc.shift:
+	if not pjk:
 		return
 
-	end_time, grace = frappe.db.get_value("Shift Type", doc.shift, ["end_time", "early_exit_grace_period"])
-	if end_time is None:
+	shift = _rentang_shift(doc.shift, doc.attendance_date)
+	if not shift:
 		return
-	shift_end = datetime.datetime.combine(getdate(doc.attendance_date), datetime.time()) + _as_timedelta(end_time)
-	out_time = get_datetime(doc.out_time)
-	jam_pjk = sum(cint(p.jam_dihitung) for p in pjk)
-	toleransi = datetime.timedelta(minutes=cint(grace))
-	batas_pjk = shift_end - datetime.timedelta(hours=jam_pjk) - toleransi
+	shift_start, shift_end, grace_masuk, grace_pulang = shift
 
-	# Pulang lebih awal dalam jatah PJK: PJK dianggap diambil dan tidak dihitung pulang cepat.
-	# Pulang normal (tidak memakai PJK) tidak mengubah apa pun; PJK hangus esok harinya.
-	if batas_pjk <= out_time < shift_end - toleransi:
-		doc.early_exit = 0
-		doc.flags.xsha_pjk = [p.name for p in pjk]
+	awal = [p for p in pjk if _pjk_di_awal_shift(p, shift_start, shift_end)]
+	akhir = [p for p in pjk if p not in awal]
+	diambil = []
+
+	# Datang lebih siang dalam jatah PJK awal shift: tidak dihitung telat.
+	if awal and doc.in_time:
+		in_time = get_datetime(doc.in_time)
+		toleransi = datetime.timedelta(minutes=cint(grace_masuk))
+		jam = sum(cint(p.jam_dihitung) for p in awal)
+		if shift_start + toleransi < in_time <= shift_start + datetime.timedelta(hours=jam) + toleransi:
+			doc.late_entry = 0
+			diambil += [p.name for p in awal]
+
+	# Pulang lebih awal dalam jatah PJK akhir shift: tidak dihitung pulang cepat.
+	if akhir and doc.out_time:
+		out_time = get_datetime(doc.out_time)
+		toleransi = datetime.timedelta(minutes=cint(grace_pulang))
+		jam = sum(cint(p.jam_dihitung) for p in akhir)
+		if shift_end - datetime.timedelta(hours=jam) - toleransi <= out_time < shift_end - toleransi:
+			doc.early_exit = 0
+			diambil += [p.name for p in akhir]
+
+	if diambil:
+		doc.flags.xsha_pjk = diambil
 
 
 def attendance_on_submit(doc, method=None):
