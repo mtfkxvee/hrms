@@ -202,6 +202,50 @@ def _hrd_users() -> list[str]:
 # ---------------------------------------------------------------------------
 
 FIELD_RENCANA = ("employee", "tanggal", "jam_mulai", "jam_selesai", "pekerjaan", "alasan")
+# Boleh diisi pemohon selain field rencana. Field lain (status, atasan, kompensasi, PJK, realisasi,
+# jam dihitung, persetujuan) hanya diisi lewat fungsi aksi di file ini atau oleh HR.
+FIELD_BEBAS = ("catatan",)
+# Diisi ulang dari data karyawan/atasan setiap simpan, jadi isian pemohon diabaikan.
+FIELD_TURUNAN = ("employee_name", "branch", "department", "company", "atasan_name", "durasi_rencana")
+_LAYOUT = frozenset(("Section Break", "Column Break", "Tab Break", "HTML", "Button", "Fold", "Heading"))
+
+
+def _field_terkunci(doc) -> list:
+	bebas = set(FIELD_RENCANA) | set(FIELD_BEBAS) | set(FIELD_TURUNAN)
+	return [df for df in doc.meta.fields if df.fieldtype not in _LAYOUT and df.fieldname not in bebas]
+
+
+def _nilai_field(df, value):
+	"""Bentuk pembanding per tipe field (nilai dari REST berupa teks, dari database bertipe)."""
+	if value in (None, ""):
+		return None
+	if df.fieldtype in ("Int", "Check"):
+		return cint(value) or None
+	if df.fieldtype in ("Float", "Currency", "Percent"):
+		return flt(value) or None
+	if df.fieldtype == "Datetime":
+		return get_datetime(value).replace(microsecond=0)
+	if df.fieldtype == "Date":
+		return getdate(value)
+	if df.fieldtype == "Time":
+		return _as_timedelta(value)
+	return str(value).strip() or None
+
+
+def _isi_turunan(doc):
+	"""Nama, cabang, departemen, perusahaan selalu dari data Employee (bukan dari isian pemohon)."""
+	if doc.employee:
+		emp = frappe.db.get_value(
+			"Employee", doc.employee, ["employee_name", "branch", "department", "company"], as_dict=True
+		)
+		if emp:
+			doc.employee_name, doc.branch, doc.department, doc.company = (
+				emp.employee_name,
+				emp.branch,
+				emp.department,
+				emp.company,
+			)
+	doc.atasan_name = frappe.utils.get_fullname(doc.atasan) if doc.atasan else None
 
 
 def _nilai(value):
@@ -224,8 +268,13 @@ def validate(doc):
 		doc.durasi_rencana = durasi_jam(doc.jam_mulai, doc.jam_selesai)
 
 	if doc.is_new():
+		if not _is_hr():
+			# pengajuan baru dari karyawan: semua isian di luar rencana dikosongkan
+			for df in _field_terkunci(doc):
+				doc.set(df.fieldname, None)
 		doc.status = "Pending Supervisor"
 		doc.atasan = get_atasan(doc.employee)
+		_isi_turunan(doc)
 		_validate_pemilik(doc)
 		_validate_rencana(doc)
 		return
@@ -237,6 +286,19 @@ def validate(doc):
 	aksi = doc.flags.get("lembur_aksi")
 	if doc.status != before.status and not aksi and not _is_hr():
 		frappe.throw(_("Overtime Request status can only be changed through the approval actions."))
+	if not aksi and not _is_hr():
+		# read_only di form tidak dijaga server: tolak perubahan lewat API/REST
+		berubah = [
+			_(df.label or df.fieldname)
+			for df in _field_terkunci(doc)
+			if _nilai_field(df, doc.get(df.fieldname)) != _nilai_field(df, before.get(df.fieldname))
+		]
+		if berubah:
+			frappe.throw(
+				_("These fields can only be changed through the approval actions: {0}").format(", ".join(berubah)),
+				title=_("Not Permitted"),
+			)
+	_isi_turunan(doc)
 
 	rencana_berubah = any(_nilai(doc.get(f)) != _nilai(before.get(f)) for f in FIELD_RENCANA)
 	if rencana_berubah:
