@@ -182,6 +182,7 @@ import WorkflowActionSheet from "@/components/WorkflowActionSheet.vue"
 import XshaApprovalActions from "@/components/XshaApprovalActions.vue"
 
 import { getCompanyCurrency } from "@/data/currencies"
+import { isUnlimitedLeaveType } from "@/data/leaves"
 import { formatCurrency } from "@/utils/formatters"
 
 import useWorkflow from "@/composables/workflow"
@@ -259,6 +260,12 @@ const currency = computed(() => {
 
 const fieldsWithValues = computed(() => {
 	return props.fields.filter((field) => {
+		// X-SHA: saldo cuti tanpa batas (SAKIT, CUTI ISTIMEWA, jatah 365) tidak ditampilkan
+		if (
+			field.fieldname === "leave_balance" &&
+			isUnlimitedLeaveType(document?.doc?.leave_type || props.modelValue.leave_type)
+		)
+			return false
 		if (field.fieldtype === "Currency") {
 			field.value = formatCurrency(
 				document.doc?.[field.fieldname],

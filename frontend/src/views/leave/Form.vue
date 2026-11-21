@@ -21,6 +21,7 @@ import { createResource } from "frappe-ui"
 import { ref, watch, inject } from "vue"
 
 import FormView from "@/components/FormView.vue"
+import { isUnlimitedLeaveType } from "@/data/leaves"
 
 const dayjs = inject("$dayjs")
 const __ = inject("$translate")
@@ -95,7 +96,13 @@ watch(
 )
 watch(
 	() => leaveApplication.value.leave_type,
-	(leave_type) => setLeaveBalance(leave_type)
+	(leave_type) => {
+		setLeaveBalance(leave_type)
+		// X-SHA: saldo hanya ditampilkan untuk cuti berjatah (Cuti Tahunan),
+		// bukan untuk SAKIT / CUTI ISTIMEWA yang jatahnya 365 (tanpa batas)
+		const balanceField = formFields.data?.find((field) => field.fieldname === "leave_balance")
+		if (balanceField) balanceField.hidden = isUnlimitedLeaveType(leave_type)
+	}
 )
 
 watch(

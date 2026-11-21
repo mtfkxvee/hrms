@@ -51,6 +51,14 @@ export const teamLeaves = createResource({
 	},
 })
 
+// X-SHA: jenis cuti dengan jatah >= 365 hari (SAKIT, CUTI ISTIMEWA) dianggap tanpa batas.
+// Karyawan hanya melihat yang sudah terpakai, bukan sisa/jatah. Cuti Tahunan tetap sisa/jatah.
+export const UNLIMITED_LEAVE_DAYS = 365
+export const isUnlimitedLeave = (allocation) =>
+	(allocation?.allocated_leaves || 0) >= UNLIMITED_LEAVE_DAYS
+export const isUnlimitedLeaveType = (leaveType) =>
+	isUnlimitedLeave(leaveBalance.data?.[leaveType])
+
 export const leaveBalance = createResource({
 	url: "hrms.api.get_leave_balance_map",
 	auto: true,
