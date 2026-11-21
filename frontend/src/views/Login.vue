@@ -38,6 +38,16 @@
 								<FeatherIcon :name="showPassword ? 'eye-off' : 'eye'" class="h-4 w-4" />
 							</button>
 						</div>
+						<!-- X-SHA: lupa password, kirim link reset ke email (fitur bawaan ERP) -->
+						<div class="flex justify-end">
+							<button
+								type="button"
+								class="text-sm text-gray-600 underline underline-offset-2"
+								@click="openForgotPassword"
+							>
+								{{ __("Forgot Password?") }}
+							</button>
+						</div>
 						<ErrorMessage :message="errorMessage" />
 						<Button
 							:loading="session.login.loading"
@@ -66,6 +76,33 @@
 					<div v-else-if="user_pass_login_disabled.data" class="text-center text-gray-600 py-8">{{ __("No login methods are available. Please contact your administrator.") }}</div>
 				</div>
 			</div>
+
+			<Dialog v-model="forgot.showDialog">
+				<template #body-title>
+					<h2 class="text-lg font-bold">{{ __("Forgot Password") }}</h2>
+				</template>
+				<template #body-content>
+					<div v-if="forgot.sent" class="text-base text-gray-700">
+						{{ __("A link to set a new password has been sent to {0}. Open your email and follow the link.", [forgot.email]) }}
+					</div>
+					<form v-else class="flex flex-col space-y-4" @submit.prevent="sendResetLink">
+						<p class="text-base text-gray-600">
+							{{ __("Enter your account email. We will send a link to set a new password.") }}
+						</p>
+						<Input
+							:label="__('Email')"
+							:placeholder="__('johndoe@mail.com')"
+							v-model="forgot.email"
+							type="text"
+							autocomplete="username"
+						/>
+						<ErrorMessage :message="forgot.error" />
+						<Button variant="solid" :loading="forgot.loading">
+							{{ __("Send Reset Link") }}
+						</Button>
+					</form>
+				</template>
+			</Dialog>
 
 			<Dialog v-model="resetPassword.showDialog">
 				<template #body-title>
@@ -122,12 +159,48 @@
 <script setup>
 import { IonPage, IonContent } from "@ionic/vue"
 import { inject, reactive, ref } from "vue"
-import { Input, Button, ErrorMessage, Dialog, FeatherIcon, createResource } from "frappe-ui"
+import { Input, Button, ErrorMessage, Dialog, FeatherIcon, call, createResource } from "frappe-ui"
 
 
 const email = ref(null)
 const password = ref(null)
 const showPassword = ref(false)
+
+// X-SHA: lupa password -> frappe.core.doctype.user.user.reset_password (sama seperti login ERP)
+const forgot = reactive({ showDialog: false, email: "", sent: false, loading: false, error: "" })
+
+function openForgotPassword() {
+	forgot.email = (email.value || "").trim()
+	forgot.sent = false
+	forgot.error = ""
+	forgot.showDialog = true
+}
+
+async function sendResetLink() {
+	const user = (forgot.email || "").trim()
+	forgot.error = ""
+	if (!user) {
+		forgot.error = __("Please enter your email.")
+		return
+	}
+	forgot.loading = true
+	try {
+		const res = await call("frappe.core.doctype.user.user.reset_password", { user })
+		if (res === "disabled") forgot.error = __("This account is disabled. Please contact HR.")
+		else if (res === "not allowed") forgot.error = __("Password reset is not allowed for this account.")
+		else {
+			forgot.email = user
+			forgot.sent = true
+		}
+	} catch (e) {
+		const msg = String(e?.messages?.join(" ") || e?.message || "")
+		forgot.error = /not found|404/i.test(msg) || e?.exc_type === "DoesNotExistError"
+			? __("Email is not registered. Check the spelling or contact HR.")
+			: msg || __("Failed to send the reset link. Please try again later.")
+	} finally {
+		forgot.loading = false
+	}
+}
 const errorMessage = ref("")
 
 const resetPassword = reactive({
