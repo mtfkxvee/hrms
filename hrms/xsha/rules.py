@@ -35,11 +35,16 @@ def checkin_before_validate(doc, method=None):
 
 	Berlaku untuk semua role (termasuk HR) saat membuat log untuk dirinya sendiri.
 	Koreksi jam milik sendiri harus lewat Attendance Request. Log dari mesin absen
-	atau dibuat HR untuk karyawan lain tidak terpengaruh.
+	atau dibuat HR untuk karyawan lain tidak terpengaruh. Pengecualian: check-in offline
+	dari aplikasi (flag xsha_waktu_offline, diisi hrms.xsha.checkin.buat_checkin).
 	"""
 	if not doc.is_new() or frappe.session.user in ("Administrator", "Guest"):
 		return
 	if frappe.flags.in_import or frappe.flags.in_patch:
+		return
+	if doc.flags.get("xsha_waktu_offline"):
+		# check-in offline: jam HP terkoreksi yang sudah divalidasi hrms.xsha.offline.waktu_dari_hp
+		doc.time = doc.flags.xsha_waktu_offline
 		return
 	if _employee_user(doc.employee) == frappe.session.user:
 		doc.time = now_datetime().replace(microsecond=0)

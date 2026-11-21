@@ -2,6 +2,7 @@
 	<BaseLayout>
 		<template #body>
 			<div class="flex flex-col items-center my-7 p-4 gap-7">
+				<AntreanOffline />
 				<CheckInPanel />
 				<LemburPanel />
 				<QuickLinks :items="quickLinks" :title="__('Quick Links')" />
@@ -14,6 +15,7 @@
 <script setup>
 import { inject, markRaw } from "vue"
 
+import AntreanOffline from "@/components/AntreanOffline.vue"
 import CheckInPanel from "@/components/CheckInPanel.vue"
 import LemburPanel from "@/components/LemburPanel.vue"
 import LemburIcon from "@/components/icons/LemburIcon.vue"

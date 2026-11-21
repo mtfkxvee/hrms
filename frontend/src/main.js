@@ -1,3 +1,5 @@
+// X-Sha: harus paling awal, supaya semua request API ikut mencatat selisih jam server
+import "./offline/jam"
 import { createApp } from "vue"
 import App from "./App.vue"
 import router from "./router"
@@ -24,6 +26,7 @@ import dayjs from "@/utils/dayjs"
 import getIonicConfig from "@/utils/ionicConfig"
 
 import FrappePushNotification from "../public/frappe-push-notification"
+import { mulaiSinkronOtomatis } from "@/offline/antrean"
 
 /* Core CSS required for Ionic components to work properly */
 import "@ionic/vue/css/core.css"
@@ -62,7 +65,12 @@ const registerServiceWorker = async () => {
 	window.frappePushNotification = new FrappePushNotification("hrms")
 
 	if ("serviceWorker" in navigator) {
-		let serviceWorkerURL = "/assets/hrms/frontend/sw.js"
+		// X-Sha: sw.js disajikan lewat endpoint (header Service-Worker-Allowed) supaya scope-nya
+		// /hrms dan halaman app tetap bisa dibuka saat server down. Lihat hrms/xsha/offline.py.
+		let serviceWorkerURL = import.meta.env.DEV
+			? "/assets/hrms/frontend/sw.js"
+			: "/api/method/hrms.xsha.offline.service_worker"
+		const registerOptions = import.meta.env.DEV ? { type: "classic" } : { type: "classic", scope: "/hrms" }
 		let config = ""
 
 		try {
@@ -75,9 +83,7 @@ const registerServiceWorker = async () => {
 		}
 
 		navigator.serviceWorker
-			.register(serviceWorkerURL, {
-				type: "classic",
-			})
+			.register(serviceWorkerURL, registerOptions)
 			.then((registration) => {
 				if (config) {
 					window.frappePushNotification.initialize(registration).then(() => {
@@ -108,13 +114,52 @@ router.isReady().then(async () => {
 	app.mount("#app")
 })
 
+// X-Sha mode offline: saat server down, request bisa gagal atau menggantung lama (Cloudflare
+// 522 baru menjawab setelah belasan detik). Pakai data cache terakhir supaya app tetap terbuka.
+const BATAS_TUNGGU_SERVER_MS = 8000
+// setelah sekali gagal, pindah halaman berikutnya tidak perlu menunggu lama lagi
+const BATAS_TUNGGU_SAAT_DOWN_MS = 2000
+let serverTerakhirGagal = false
+const batasTunggu = () => (serverTerakhirGagal ? BATAS_TUNGGU_SAAT_DOWN_MS : BATAS_TUNGGU_SERVER_MS)
+
+function denganBatasWaktu(promise, ms) {
+	let timer
+	const batas = new Promise((_, reject) => {
+		timer = setTimeout(() => reject(new Error("timeout")), ms)
+	})
+	return Promise.race([Promise.resolve(promise), batas]).finally(() => clearTimeout(timer))
+}
+
+function errorLogin(error) {
+	const status = error?.response?.status
+	return (
+		status === 401 ||
+		status === 403 ||
+		["AuthenticationError", "PermissionError", "SessionExpired"].includes(error?.exc_type)
+	)
+}
+
+// data cache (IndexedDB) dimuat async oleh frappe-ui; tunggu sebentar
+async function tungguData(resource, ms = 2000) {
+	const sampai = Date.now() + ms
+	while (!resource.data && Date.now() < sampai) {
+		await new Promise((r) => setTimeout(r, 50))
+	}
+	return Boolean(resource.data)
+}
+
 router.beforeEach(async (to, _, next) => {
 	let isLoggedIn = session.isLoggedIn
 
 	try {
-		if (isLoggedIn) await userResource.reload()
+		if (isLoggedIn) {
+			await denganBatasWaktu(userResource.reload(), batasTunggu())
+			serverTerakhirGagal = false
+		}
 	} catch (error) {
-		isLoggedIn = false
+		// server tidak bisa dihubungi: tetap masuk dengan data user terakhir
+		serverTerakhirGagal = !errorLogin(error)
+		isLoggedIn = serverTerakhirGagal && (await tungguData(userResource))
 	}
 
 	if (!isLoggedIn) {
@@ -126,8 +171,14 @@ router.beforeEach(async (to, _, next) => {
 		}
 	}
 
+	if (isLoggedIn) mulaiSinkronOtomatis()
+
 	if (isLoggedIn && to.name !== "InvalidEmployee") {
-		await employeeResource.promise
+		try {
+			await denganBatasWaktu(employeeResource.promise, batasTunggu())
+		} catch (error) {
+			await tungguData(employeeResource)
+		}
 		// user should be an employee to access the app
 		// since all views are employee specific
 		if (

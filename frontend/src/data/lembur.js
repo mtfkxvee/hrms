@@ -48,6 +48,7 @@ export const teamLembur = createResource({
 export const lemburHariIni = createResource({
 	url: API + "get_lembur_hari_ini",
 	auto: true,
+	cache: "hrms:lembur_hari_ini", // mode offline: tombol Mulai/Selesai Lembur tetap ada saat server down
 })
 
 export const saldoPjk = createResource({

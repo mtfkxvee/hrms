@@ -535,10 +535,14 @@ def _cek_lokasi(latitude, longitude):
 
 @frappe.whitelist(methods=["POST"])
 def mulai_lembur(name: str, latitude=None, longitude=None, photo: str | None = None):
+	return catat_mulai(name, now_datetime(), latitude, longitude, photo)
+
+
+def catat_mulai(name: str, sekarang, latitude=None, longitude=None, photo=None, offline_id=None):
+	"""sekarang = jam server, atau jam HP terkoreksi untuk data offline (hrms.xsha.offline)."""
 	doc = _ambil(name, ("Approved",))
 	if _employee_user(doc.employee) != frappe.session.user:
 		frappe.throw(_("Only the employee can start this overtime."))
-	sekarang = now_datetime()
 	mulai, selesai = rentang_rencana(doc.tanggal, doc.jam_mulai, doc.jam_selesai)
 	if not (mulai - datetime.timedelta(minutes=30) <= sekarang <= selesai):
 		frappe.throw(
@@ -550,6 +554,8 @@ def mulai_lembur(name: str, latitude=None, longitude=None, photo: str | None = N
 	doc.foto_mulai = _simpan_foto(doc, "mulai", photo)
 	doc.mulai_lembur = sekarang
 	doc.mulai_latitude, doc.mulai_longitude = flt(latitude), flt(longitude)
+	if offline_id:
+		doc.mulai_offline, doc.mulai_offline_id = 1, offline_id
 	doc.status = "In Progress"
 	return _simpan(doc, "mulai")
 
@@ -566,13 +572,19 @@ def _isi_realisasi(doc, selesai: datetime.datetime):
 
 @frappe.whitelist(methods=["POST"])
 def selesai_lembur(name: str, latitude=None, longitude=None, photo: str | None = None):
+	return catat_selesai(name, now_datetime(), latitude, longitude, photo)
+
+
+def catat_selesai(name: str, sekarang, latitude=None, longitude=None, photo=None, offline_id=None):
 	doc = _ambil(name, ("In Progress",))
 	if _employee_user(doc.employee) != frappe.session.user:
 		frappe.throw(_("Only the employee can end this overtime."))
 	_cek_lokasi(latitude, longitude)
 	doc.foto_selesai = _simpan_foto(doc, "selesai", photo)
 	doc.selesai_latitude, doc.selesai_longitude = flt(latitude), flt(longitude)
-	_isi_realisasi(doc, now_datetime())
+	if offline_id:
+		doc.selesai_offline, doc.selesai_offline_id = 1, offline_id
+	_isi_realisasi(doc, sekarang)
 	doc.status = "Pending Confirmation"
 	hasil = _simpan(doc, "selesai")
 	_notify(

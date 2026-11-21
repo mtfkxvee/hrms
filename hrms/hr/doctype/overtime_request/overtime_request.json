@@ -44,11 +44,15 @@
   "mulai_latitude",
   "mulai_longitude",
   "foto_mulai",
+  "mulai_offline",
+  "mulai_offline_id",
   "column_break_4",
   "selesai_lembur",
   "selesai_latitude",
   "selesai_longitude",
   "foto_selesai",
+  "selesai_offline",
+  "selesai_offline_id",
   "section_realisasi",
   "menit_realisasi",
   "jam_dihitung",
@@ -319,6 +323,22 @@
    "read_only": 1
   },
   {
+   "fieldname": "mulai_offline",
+   "fieldtype": "Check",
+   "label": "Start Recorded Offline",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "Recorded on the phone while the server was unreachable, sent automatically later"
+  },
+  {
+   "fieldname": "mulai_offline_id",
+   "fieldtype": "Data",
+   "label": "Start Offline ID",
+   "read_only": 1,
+   "hidden": 1,
+   "no_copy": 1
+  },
+  {
    "fieldname": "column_break_4",
    "fieldtype": "Column Break"
   },
@@ -349,6 +369,22 @@
    "fieldtype": "Attach Image",
    "label": "End Selfie",
    "read_only": 1
+  },
+  {
+   "fieldname": "selesai_offline",
+   "fieldtype": "Check",
+   "label": "End Recorded Offline",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "Recorded on the phone while the server was unreachable, sent automatically later"
+  },
+  {
+   "fieldname": "selesai_offline_id",
+   "fieldtype": "Data",
+   "label": "End Offline ID",
+   "read_only": 1,
+   "hidden": 1,
+   "no_copy": 1
   },
   {
    "fieldname": "section_realisasi",
@@ -433,7 +469,7 @@
  "index_web_pages_for_search": 0,
  "is_submittable": 0,
  "links": [],
- "modified": "2026-11-20 11:00:00.000000",
+ "modified": "2026-11-21 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "HR",
  "name": "Overtime Request",

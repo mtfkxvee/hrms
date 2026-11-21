@@ -5,7 +5,8 @@ Menggantikan alur lama (upload selfie publik saat foto diambil, lalu insert log 
 - A08: foto yang terlalu gelap ditolak di server
 - A09: foto dan log dibuat dalam satu request; jika check-in gagal, file ikut dibatalkan
 - A10: respons memberi tahu jika log berada di luar shift (tidak akan dihitung)
-- A17: jam memakai jam server (lihat rules.checkin_before_validate)
+- A17: jam memakai jam server (lihat rules.checkin_before_validate), kecuali check-in
+  offline yang dikirim belakangan lewat hrms.xsha.offline.sync_checkin
 """
 
 import base64
@@ -70,6 +71,22 @@ def selfie_required() -> bool:
 
 @frappe.whitelist(methods=["POST"])
 def create_checkin(log_type: str, latitude=None, longitude=None, photo: str | None = None) -> dict:
+	return buat_checkin(log_type, latitude, longitude, photo)
+
+
+def buat_checkin(
+	log_type: str,
+	latitude=None,
+	longitude=None,
+	photo: str | None = None,
+	waktu_offline=None,
+	offline_id: str | None = None,
+) -> dict:
+	"""Buat log check-in milik user yang login.
+
+	waktu_offline diisi hanya oleh hrms.xsha.offline.sync_checkin: jam check-in yang
+	tercatat di HP saat server tidak bisa dihubungi (sudah divalidasi di sana).
+	"""
 	if log_type not in ("IN", "OUT"):
 		frappe.throw(_("Jenis log tidak valid."))
 
@@ -110,6 +127,13 @@ def create_checkin(log_type: str, latitude=None, longitude=None, photo: str | No
 		)
 		if file_doc:
 			checkin.set(SELFIE_FIELD, file_doc.file_url)
+		if waktu_offline:
+			# A17 tetap berlaku untuk check-in biasa; jam offline dipakai lewat flag ini
+			checkin.flags.xsha_waktu_offline = waktu_offline
+			checkin.time = waktu_offline
+			checkin.custom_offline = 1
+			checkin.custom_offline_id = offline_id
+			checkin.custom_waktu_terkirim = now_datetime()
 		checkin.insert()
 
 		if file_doc:

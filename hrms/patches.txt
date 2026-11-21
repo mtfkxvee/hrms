@@ -39,3 +39,4 @@ hrms.patches.v15_0.remove_ess_user_type_limit
 hrms.patches.v15_0.update_approver_custom_fields
 hrms.patches.xsha.make_selfie_files_private
 hrms.patches.xsha.add_attendance_request_approval_fields
+hrms.patches.xsha.add_offline_checkin_fields

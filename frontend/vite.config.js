@@ -24,6 +24,12 @@ export default defineConfig({
 			devOptions: {
 				enabled: true,
 			},
+			injectManifest: {
+				// X-Sha mode offline: semua aset app ikut di-precache (termasuk font & ikon),
+				// dan chunk besar (frappe-ui) tidak terlewat oleh batas default 2 MB
+				globPatterns: ["**/*.{js,css,html,woff,woff2,svg,png}"],
+				maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
+			},
 			manifest: {
 				display: "standalone",
 				name: "X-PEOPLE",

@@ -10,9 +10,13 @@
 			<div class="mt-1 text-gray-500">{{ spl.pekerjaan }}</div>
 			<div v-if="spl.status === 'In Progress'" class="mt-1 text-blue-700">
 				{{ __("Started at {0}", [dayjs(spl.mulai_lembur).format("hh:mm a")]) }}
+				<span v-if="offline.mulai" class="text-orange-600">({{ __("belum terkirim") }})</span>
 			</div>
 		</div>
-		<Button variant="solid" class="py-5 text-base" @click="bukaModal">
+		<div v-if="offline.selesai" class="text-sm text-orange-600">
+			{{ __("Selesai lembur jam {0} tersimpan di HP, dikirim otomatis saat server kembali normal.", [dayjs(offline.selesai.waktu_ms).format("HH:mm")]) }}
+		</div>
+		<Button v-else variant="solid" class="py-5 text-base" @click="bukaModal">
 			<template #prefix>
 				<FeatherIcon :name="sedangLembur ? 'stop-circle' : 'play-circle'" class="w-4" />
 			</template>
@@ -98,11 +102,12 @@
 <script setup>
 import { computed, inject, ref, onBeforeUnmount } from "vue"
 import { IonModal } from "@ionic/vue"
-import { Button, FeatherIcon, createResource, toast } from "frappe-ui"
+import { Button, FeatherIcon, toast } from "frappe-ui"
 
 import LemburIcon from "@/components/icons/LemburIcon.vue"
 import { labelJam, lemburHariIni, reloadLembur } from "@/data/lembur"
 import { useSelfieLokasi } from "@/composables/selfieLokasi"
+import { antrean, kirimAtauSimpan, saatTerkirim } from "@/offline/antrean"
 
 const __ = inject("$translate")
 const dayjs = inject("$dayjs")
@@ -110,11 +115,28 @@ const dayjs = inject("$dayjs")
 const s = useSelfieLokasi()
 const modalTerbuka = ref(false)
 
-// SPL yang sedang berjalan diutamakan, lalu yang terdekat
+// Mulai/Selesai Lembur yang masih di antrean offline, per SPL
+function offlineUntuk(name) {
+	const items = antrean.items.filter((i) => i.jenis === "lembur" && i.status === "menunggu" && i.params.name === name)
+	return {
+		mulai: items.find((i) => i.params.aksi === "mulai") || null,
+		selesai: items.find((i) => i.params.aksi === "selesai") || null,
+	}
+}
+
+// SPL yang sedang berjalan diutamakan, lalu yang terdekat. Mulai yang belum terkirim
+// dianggap sudah berjalan supaya tombol berikutnya adalah Selesai.
 const spl = computed(() => {
-	const rows = lemburHariIni.data || []
+	const rows = (lemburHariIni.data || []).map((r) => {
+		const o = offlineUntuk(r.name)
+		if (r.status === "Approved" && o.mulai) {
+			return { ...r, status: "In Progress", mulai_lembur: dayjs(o.mulai.waktu_ms).format("YYYY-MM-DD HH:mm:ss") }
+		}
+		return r
+	})
 	return rows.find((r) => r.status === "In Progress") || rows[0] || null
 })
+const offline = computed(() => (spl.value ? offlineUntuk(spl.value.name) : { mulai: null, selesai: null }))
 const sedangLembur = computed(() => spl.value?.status === "In Progress")
 
 const mengirim = ref(false)
@@ -131,36 +153,58 @@ function tutupModal() {
 	modalTerbuka.value = false
 }
 
-function kirim() {
-	const label = sedangLembur.value ? __("End overtime") : __("Start overtime")
+async function kirim() {
+	const selesai = sedangLembur.value
+	const label = selesai ? __("End overtime") : __("Start overtime")
 	mengirim.value = true
-	createResource({
-		url: sedangLembur.value ? "hrms.xsha.lembur.selesai_lembur" : "hrms.xsha.lembur.mulai_lembur",
-	}).submit(
-		{
-			name: spl.value.name,
-			latitude: s.latitude.value,
-			longitude: s.longitude.value,
-			photo: s.photoData.value,
-		},
-		{
-			onSuccess(data) {
-				mengirim.value = false
-				tutupModal()
-				reloadLembur()
-				const teks = data?.status === "Pending Confirmation"
-					? __("{0} successful! {1} hrs counted, waiting for supervisor confirmation.", [label, data.jam_dihitung || 0])
-					: __("{0} successful!", [label])
-				toast({ title: __("Success"), text: teks, icon: "check-circle", position: "bottom-center", iconClasses: "text-green-500" })
+	let hasil
+	try {
+		hasil = await kirimAtauSimpan(
+			"lembur",
+			selesai ? "hrms.xsha.lembur.selesai_lembur" : "hrms.xsha.lembur.mulai_lembur",
+			{
+				name: spl.value.name,
+				latitude: s.latitude.value,
+				longitude: s.longitude.value,
+				photo: s.photoData.value,
 			},
-			onError(error) {
-				mengirim.value = false
-				const pesan = error?.messages?.length ? error.messages.join(" ") : error?.message
-				toast({ title: __("Error"), text: pesan || __("{0} failed!", [label]), icon: "alert-circle", position: "bottom-center", iconClasses: "text-red-500", timeout: 8 })
-			},
-		}
-	)
+			{ aksi: selesai ? "selesai" : "mulai" }
+		)
+	} catch (error) {
+		hasil = { pesan: error?.message }
+	} finally {
+		mengirim.value = false
+	}
+
+	if (hasil.ok) {
+		tutupModal()
+		reloadLembur()
+		const data = hasil.data
+		const teks = data?.status === "Pending Confirmation"
+			? __("{0} successful! {1} hrs counted, waiting for supervisor confirmation.", [label, data.jam_dihitung || 0])
+			: __("{0} successful!", [label])
+		toast({ title: __("Success"), text: teks, icon: "check-circle", position: "bottom-center", iconClasses: "text-green-500" })
+		return
+	}
+	if (hasil.tersimpan) {
+		tutupModal()
+		toast({
+			title: __("Tersimpan di HP"),
+			text: __("Server sedang tidak bisa dihubungi. {0} jam {1} sudah tersimpan dan akan dikirim otomatis saat server kembali normal.", [label, dayjs(hasil.waktu_ms).format("HH:mm")]),
+			icon: "clock",
+			position: "bottom-center",
+			iconClasses: "text-orange-500",
+			timeout: 10,
+		})
+		return
+	}
+	toast({ title: __("Error"), text: hasil.pesan || __("{0} failed!", [label]), icon: "alert-circle", position: "bottom-center", iconClasses: "text-red-500", timeout: 8 })
 }
 
+const hentikanPendengarAntrean = saatTerkirim((item) => {
+	if (item.jenis === "lembur") reloadLembur()
+})
+
+onBeforeUnmount(() => hentikanPendengarAntrean())
 onBeforeUnmount(() => s.stopCamera())
 </script>

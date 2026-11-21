@@ -7,6 +7,7 @@
 		<template v-if="settings.data?.allow_employee_checkin_from_mobile_app">
 			<div class="font-medium text-sm text-gray-500 mt-1.5" v-if="lastLog">
 				<span>{{ __("Last {0} was at {1}", [__(lastLogType), formatTimestamp(lastLog.time)]) }}</span>
+				<span v-if="lastLog.offline" class="text-orange-600"> ({{ __("belum terkirim") }})</span>
 				<span class="whitespace-pre"> &middot; </span>
 				<router-link :to="{ name: 'EmployeeCheckinListView' }" v-slot="{ navigate }">
 					<span @click="navigate" class="underline">View List</span>
@@ -128,7 +129,7 @@
 			</div>
 
 			<Button
-				:loading="createCheckin.loading"
+				:loading="mengirim"
 				:disabled="!canConfirm"
 				variant="solid"
 				class="w-full py-5 text-sm disabled:bg-gray-700"
@@ -143,6 +144,7 @@
 
 <script setup>
 import { createResource, createListResource, toast, FeatherIcon } from "frappe-ui"
+import { antrean, kirimAtauSimpan, saatTerkirim } from "@/offline/antrean"
 import { computed, inject, ref, onMounted, onBeforeUnmount } from "vue"
 import { IonModal, modalController } from "@ionic/vue"
 import { formatTimestamp } from "@/utils/formatters"
@@ -174,6 +176,7 @@ let cameraStream = null
 const settings = createResource({
 	url: "hrms.api.get_hr_settings",
 	auto: true,
+	cache: "hrms:hr_settings", // mode offline: panel check-in tetap tampil saat server down
 })
 
 const geolocationRequired = computed(() => Boolean(settings.data?.allow_geolocation_tracking))
@@ -183,12 +186,27 @@ const checkins = createListResource({
 	fields: ["name", "employee", "employee_name", "log_type", "time", "device_id", "shift_actual_end"],
 	filters: { employee: employee.data.name },
 	orderBy: "time desc",
+	cache: ["hrms:checkins", employee.data.name],
 })
 checkins.reload()
 
+// check-in yang masih di antrean offline (belum sampai server)
+const lastOfflineLog = computed(() => {
+	const items = antrean.items.filter((i) => i.jenis === "checkin" && i.status === "menunggu")
+	const item = items[items.length - 1]
+	if (!item) return null
+	return {
+		log_type: item.params.log_type,
+		time: dayjs(item.waktu_ms).format("YYYY-MM-DD HH:mm:ss"),
+		offline: true,
+	}
+})
+
 const lastLog = computed(() => {
-	if (checkins.list.loading || !checkins.data) return {}
-	return checkins.data[0]
+	const server = checkins.list.loading && !checkins.data ? null : checkins.data?.[0]
+	const offline = lastOfflineLog.value
+	if (offline && (!server || dayjs(offline.time).isAfter(dayjs(server.time)))) return offline
+	return server || {}
 })
 
 const lastLogType = computed(() => {
@@ -200,6 +218,7 @@ const lastLogType = computed(() => {
 // atau (untuk log tanpa shift) jika bukan dari hari ini.
 function isOpenCheckin(log) {
 	if (log?.log_type !== "IN") return false
+	if (log.offline) return dayjs(log.time).isAfter(dayjs().subtract(16, "hour"))
 	if (log.shift_actual_end) return dayjs().isBefore(dayjs(log.shift_actual_end))
 	return dayjs(log.time).isSame(dayjs(), "day")
 }
@@ -341,62 +360,87 @@ const retakePhoto = () => {
 	openCamera()
 }
 
-const createCheckin = createResource({
-	url: "hrms.xsha.checkin.create_checkin",
-})
+const mengirim = ref(false)
 
-const submitLog = (logType) => {
+function toastSukses(actionLabel, data) {
+	// A10: log di luar shift tidak akan menjadi Attendance, beri tahu karyawan
+	if (data?.offshift) {
+		toast({
+			title: __("Tercatat di luar shift"),
+			text: __(
+				"{0} tersimpan, tetapi tidak ada shift yang cocok dengan jam ini sehingga tidak dihitung sebagai kehadiran. Hubungi HR jika ini keliru.",
+				[actionLabel]
+			),
+			icon: "alert-triangle",
+			position: "bottom-center",
+			iconClasses: "text-yellow-500",
+			timeout: 8,
+		})
+		return
+	}
+	toast({
+		title: __("Success"),
+		text: __("{0} successful!", [actionLabel]),
+		icon: "check-circle",
+		position: "bottom-center",
+		iconClasses: "text-green-500",
+	})
+}
+
+const submitLog = async (logType) => {
 	const actionLabel = logType === "IN" ? __("Check-in") : __("Check-out")
-	createCheckin.submit(
-		{
+	mengirim.value = true
+	let hasil
+	try {
+		hasil = await kirimAtauSimpan("checkin", "hrms.xsha.checkin.create_checkin", {
 			log_type: logType,
 			latitude: latitude.value,
 			longitude: longitude.value,
 			photo: photoData.value,
-		},
-		{
-			onSuccess(data) {
-				stopCamera()
-				modalController.dismiss()
-				checkins.reload()
-				// A10: log di luar shift tidak akan menjadi Attendance, beri tahu karyawan
-				if (data?.offshift) {
-					toast({
-						title: __("Tercatat di luar shift"),
-						text: __(
-							"{0} tersimpan, tetapi tidak ada shift yang cocok dengan jam ini sehingga tidak dihitung sebagai kehadiran. Hubungi HR jika ini keliru.",
-							[actionLabel]
-						),
-						icon: "alert-triangle",
-						position: "bottom-center",
-						iconClasses: "text-yellow-500",
-						timeout: 8,
-					})
-					return
-				}
-				toast({
-					title: __("Success"),
-					text: __("{0} successful!", [actionLabel]),
-					icon: "check-circle",
-					position: "bottom-center",
-					iconClasses: "text-green-500",
-				})
-			},
-			onError(error) {
-				const messages = error.messages?.length ? error.messages : [error.message]
-				for (const message of messages) {
-					toast({
-						title: __("Error"),
-						text: __("{0} failed!", [actionLabel]) + (message ? `: ${message}` : ""),
-						icon: "alert-circle",
-						position: "bottom-center",
-						iconClasses: "text-red-500",
-					})
-				}
-			},
-		}
-	)
+		})
+	} catch (error) {
+		hasil = { pesan: error?.message }
+	} finally {
+		mengirim.value = false
+	}
+
+	if (hasil.ok || hasil.tersimpan) {
+		stopCamera()
+		modalController.dismiss()
+	}
+	if (hasil.ok) {
+		checkins.reload()
+		toastSukses(actionLabel, hasil.data)
+		return
+	}
+	if (hasil.tersimpan) {
+		// mode offline: tersimpan di HP, dikirim otomatis saat server hidup lagi
+		toast({
+			title: __("Tersimpan di HP"),
+			text: __(
+				"Server sedang tidak bisa dihubungi. {0} jam {1} sudah tersimpan dan akan dikirim otomatis saat server kembali normal. Buka aplikasi lagi nanti supaya terkirim.",
+				[actionLabel, dayjs(hasil.waktu_ms).format("HH:mm")]
+			),
+			icon: "clock",
+			position: "bottom-center",
+			iconClasses: "text-orange-500",
+			timeout: 10,
+		})
+		return
+	}
+	toast({
+		title: __("Error"),
+		text: __("{0} failed!", [actionLabel]) + (hasil.pesan ? `: ${hasil.pesan}` : ""),
+		icon: "alert-circle",
+		position: "bottom-center",
+		iconClasses: "text-red-500",
+		timeout: 8,
+	})
 }
+
+const hentikanPendengarAntrean = saatTerkirim((item) => {
+	if (item.jenis === "checkin") checkins.reload()
+})
 
 onMounted(() => {
 	socket.emit("doctype_subscribe", DOCTYPE)
@@ -406,6 +450,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+	hentikanPendengarAntrean()
 	stopCamera()
 	socket.emit("doctype_unsubscribe", DOCTYPE)
 	socket.off("list_update")
