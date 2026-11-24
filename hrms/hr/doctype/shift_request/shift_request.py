@@ -5,6 +5,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.query_builder.functions import IfNull
 from frappe.utils import get_link_to_form
 
 import hrms
@@ -110,6 +111,8 @@ class ShiftRequest(Document, PWANotificationsMixin):
 			.where(
 				(shift.employee == self.employee)
 				& (shift.docstatus < 2)
+				# X-SHA: pengajuan yang ditolak tidak dihitung bentrok, supaya bisa diajukan ulang
+				& (IfNull(shift.status, "") != "Rejected")
 				& (shift.name != self.name)
 				& ((shift.to_date >= self.from_date) | (shift.to_date.isnull()))
 			)
