@@ -8,6 +8,7 @@
 			<div class="font-medium text-sm text-gray-500 mt-1.5" v-if="lastLog">
 				<span>{{ __("Last {0} was at {1}", [__(lastLogType), formatTimestamp(lastLog.time)]) }}</span>
 				<span v-if="lastLog.offline" class="text-orange-600"> ({{ __("belum terkirim") }})</span>
+				<span v-if="lastLogOtomatis"> ({{ __("otomatis, lupa check-out") }})</span>
 				<span class="whitespace-pre"> &middot; </span>
 				<router-link :to="{ name: 'EmployeeCheckinListView' }" v-slot="{ navigate }">
 					<span @click="navigate" class="underline">View List</span>
@@ -204,14 +205,23 @@ const lastLogType = computed(() => {
 })
 
 // A15: check-in yang tidak ditutup (lupa check-out) tidak boleh membuat tombol esok hari
-// tetap "Check Out". Log IN dianggap sudah lewat jika jendela shift-nya sudah selesai,
-// atau (untuk log tanpa shift) jika bukan dari hari ini.
+// tetap "Check Out". Check-in ber-shift ditutup oleh check-out otomatis server
+// (hrms.xsha.auto_checkout) begitu jendela shift habis, jadi selama log terakhir masih IN
+// tombol tetap "Check Out". shift_actual_end di log bisa basi (disimpan saat check-in;
+// jendela Shift Type bisa diubah sesudahnya), maka dipakai batas aman BATAS_AMAN_JAM
+// setelahnya, kalau-kalau check-out otomatis belum/gagal jalan.
+// Log tanpa shift: hanya jika dari hari ini.
+const BATAS_AMAN_JAM = 3
+const AUTO_CHECKOUT = "AUTO CHECKOUT"
+
 function isOpenCheckin(log) {
 	if (log?.log_type !== "IN") return false
 	if (log.offline) return dayjs(log.time).isAfter(dayjs().subtract(16, "hour"))
-	if (log.shift_actual_end) return dayjs().isBefore(dayjs(log.shift_actual_end))
+	if (log.shift_actual_end) return dayjs().isBefore(dayjs(log.shift_actual_end).add(BATAS_AMAN_JAM, "hour"))
 	return dayjs(log.time).isSame(dayjs(), "day")
 }
+
+const lastLogOtomatis = computed(() => lastLog.value?.device_id === AUTO_CHECKOUT)
 
 const nextAction = computed(() => {
 	return isOpenCheckin(lastLog.value)
