@@ -268,6 +268,9 @@ doc_events = {
 # ---------------
 
 scheduler_events = {
+	"cron": {
+		"*/15 * * * *": ["hrms.xsha.auto_checkout.jalankan"],
+	},
 	"all": [
 		"hrms.hr.doctype.interview.interview.send_interview_reminder",
 	],

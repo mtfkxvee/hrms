@@ -179,11 +179,18 @@ def _perbaiki(checkin: str):
 	log = frappe.db.get_value(
 		"Employee Checkin",
 		checkin,
-		["name", "employee", "employee_name", "log_type", "time", "shift", "shift_start", "shift_actual_end", "offshift", "attendance"],
+		["name", "employee", "employee_name", "log_type", "time", "shift", "shift_start", "shift_actual_end", "offshift", "attendance", "device_id"],
 		as_dict=True,
 	)
 	if not log or not log.shift or not log.shift_start or cint(log.offshift) or log.attendance:
 		return
+
+	from hrms.xsha.auto_checkout import DEVICE_ID, hapus_auto_checkout
+
+	checkout_asli = log.log_type == "OUT" and log.device_id != DEVICE_ID
+	if checkout_asli:
+		# check-out asli menggantikan check-out otomatis di shift yang sama
+		hapus_auto_checkout(log.employee, log.shift, log.shift_start, kecuali=log.name)
 
 	shift = frappe.get_doc("Shift Type", log.shift)
 	if not cint(shift.enable_auto_attendance) or not shift.last_sync_of_checkin or not shift.process_attendance_after:
@@ -218,6 +225,8 @@ def _perbaiki(checkin: str):
 	doc = frappe.get_doc("Attendance", lama.name)
 	doc.flags.ignore_permissions = True
 	doc.cancel()
+	if checkout_asli:
+		hapus_auto_checkout(log.employee, log.shift, log.shift_start, kecuali=log.name)
 	doc.add_comment(
 		"Comment",
 		_("Dibatalkan otomatis: check-in offline {0} ({1} {2}) baru terkirim, Attendance dihitung ulang.").format(
