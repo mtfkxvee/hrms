@@ -48,38 +48,33 @@
 					v-if="s.photoPreview.value"
 					:src="s.photoPreview.value"
 					class="w-full max-w-xs rounded-lg border"
-					style="max-height: 200px; object-fit: cover; transform: scaleX(-1)"
+					style="max-height: 200px; object-fit: cover"
 				/>
-				<video
-					v-show="s.cameraActive.value && !s.photoPreview.value"
-					:ref="(el) => (s.videoRef.value = el)"
-					autoplay
-					playsinline
-					class="w-full max-w-xs rounded-lg border"
-					style="max-height: 200px; object-fit: cover; transform: scaleX(-1)"
-				></video>
-				<canvas :ref="(el) => (s.canvasRef.value = el)" style="display: none"></canvas>
+				<!-- X-Sha: selfie lewat aplikasi kamera bawaan HP -->
+				<input
+					:ref="(el) => (s.inputFotoRef.value = el)"
+					type="file"
+					accept="image/*"
+					capture="user"
+					style="display: none"
+					@change="s.onFotoDipilih"
+				/>
 				<div class="flex gap-2 w-full">
 					<button
-						v-if="!s.cameraActive.value && !s.photoPreview.value"
-						@click="s.openCamera"
-						class="w-full py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium"
+						v-if="!s.photoPreview.value"
+						@click="s.ambilFoto"
+						:disabled="s.memprosesFoto.value"
+						class="w-full py-2 rounded-lg bg-blue-500 text-white text-sm font-medium disabled:opacity-60"
 					>
-						📷 {{ __("Buka Kamera") }}
+						📷 {{ s.memprosesFoto.value ? __("Memproses foto...") : __("Ambil Foto") }}
 					</button>
 					<button
-						v-if="s.cameraActive.value && !s.photoPreview.value"
-						@click="s.capturePhoto"
-						class="w-full py-2 rounded-lg bg-blue-500 text-white text-sm font-medium"
+						v-else
+						@click="s.ambilFoto"
+						:disabled="s.memprosesFoto.value"
+						class="w-full py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium disabled:opacity-60"
 					>
-						📸 {{ __("Ambil Foto") }}
-					</button>
-					<button
-						v-if="s.photoPreview.value"
-						@click="s.retakePhoto"
-						class="w-full py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium"
-					>
-						🔄 {{ __("Foto Ulang") }}
+						🔄 {{ s.memprosesFoto.value ? __("Memproses foto...") : __("Foto Ulang") }}
 					</button>
 				</div>
 				<span v-if="s.photoStatus.value" class="text-xs text-gray-500 text-center">{{ s.photoStatus.value }}</span>
@@ -149,7 +144,6 @@ function bukaModal() {
 }
 
 function tutupModal() {
-	s.stopCamera()
 	modalTerbuka.value = false
 }
 
@@ -206,5 +200,4 @@ const hentikanPendengarAntrean = saatTerkirim((item) => {
 })
 
 onBeforeUnmount(() => hentikanPendengarAntrean())
-onBeforeUnmount(() => s.stopCamera())
 </script>

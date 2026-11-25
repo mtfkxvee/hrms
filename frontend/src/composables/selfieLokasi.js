@@ -1,10 +1,8 @@
 // X-Sha: selfie + lokasi untuk Mulai/Selesai Lembur.
 // Aturannya sama dengan CheckInPanel (A07/A08/A18): foto disimpan di memori, foto gelap
-// ditolak, lokasi akurasi tinggi dengan tombol Coba Lagi.
+// ditolak, lokasi akurasi tinggi dengan tombol Coba Lagi. Selfie lewat kamera bawaan HP.
 import { ref, computed, inject } from "vue"
-
-const MIN_BRIGHTNESS = 35
-const MAX_PHOTO_SIDE = 960
+import { bukaKameraHP, prosesFotoKamera } from "@/composables/kameraHP"
 
 export function useSelfieLokasi() {
 	const __ = inject("$translate")
@@ -15,13 +13,11 @@ export function useSelfieLokasi() {
 	const locationStatus = ref("")
 	const locationHelp = ref("")
 
-	const videoRef = ref(null)
-	const canvasRef = ref(null)
-	const cameraActive = ref(false)
+	const inputFotoRef = ref(null)
+	const memprosesFoto = ref(false)
 	const photoPreview = ref(null)
 	const photoData = ref(null)
 	const photoStatus = ref("")
-	let cameraStream = null
 
 	function handleLocationSuccess(position) {
 		latitude.value = position.coords.latitude
@@ -62,67 +58,27 @@ export function useSelfieLokasi() {
 		})
 	}
 
-	function stopCamera() {
-		if (cameraStream) cameraStream.getTracks().forEach((t) => t.stop())
-		cameraStream = null
-		cameraActive.value = false
-	}
-
-	async function openCamera() {
-		try {
-			cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
-			cameraActive.value = true
-			photoStatus.value = ""
-			await new Promise((r) => setTimeout(r, 100))
-			if (videoRef.value) videoRef.value.srcObject = cameraStream
-		} catch (err) {
-			photoStatus.value = __("Tidak bisa membuka kamera: {0}", [err.message])
-		}
-	}
-
-	function averageBrightness(ctx, width, height) {
-		const { data } = ctx.getImageData(0, 0, width, height)
-		let total = 0
-		let count = 0
-		for (let i = 0; i < data.length; i += 64) {
-			total += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
-			count++
-		}
-		return count ? total / count : 0
-	}
-
-	function capturePhoto() {
-		const video = videoRef.value
-		const canvas = canvasRef.value
-		if (!video || !canvas || !video.videoWidth) return
-
-		const scale = Math.min(1, MAX_PHOTO_SIDE / Math.max(video.videoWidth, video.videoHeight))
-		canvas.width = Math.round(video.videoWidth * scale)
-		canvas.height = Math.round(video.videoHeight * scale)
-		const ctx = canvas.getContext("2d")
-		ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-		stopCamera()
-
-		const dataUrl = canvas.toDataURL("image/jpeg", 0.8)
-		photoPreview.value = dataUrl
-		if (averageBrightness(ctx, canvas.width, canvas.height) < MIN_BRIGHTNESS) {
-			photoData.value = null
-			photoStatus.value = __("Foto terlalu gelap. Pastikan wajah terlihat jelas, lalu foto ulang.")
-			return
-		}
-		photoData.value = dataUrl
-		photoStatus.value = __("Foto siap")
-	}
-
-	function retakePhoto() {
-		photoPreview.value = null
-		photoData.value = null
+	function ambilFoto() {
 		photoStatus.value = ""
-		openCamera()
+		bukaKameraHP(inputFotoRef.value)
+	}
+
+	async function onFotoDipilih(event) {
+		const file = event.target.files?.[0]
+		if (!file) return
+		memprosesFoto.value = true
+		try {
+			const hasil = await prosesFotoKamera(file, __)
+			photoPreview.value = hasil.preview || null
+			photoData.value = hasil.ok ? hasil.dataUrl : null
+			photoStatus.value = hasil.pesan || ""
+		} finally {
+			memprosesFoto.value = false
+			event.target.value = ""
+		}
 	}
 
 	function reset() {
-		stopCamera()
 		photoPreview.value = null
 		photoData.value = null
 		photoStatus.value = ""
@@ -144,17 +100,14 @@ export function useSelfieLokasi() {
 		locationState,
 		locationStatus,
 		locationHelp,
-		videoRef,
-		canvasRef,
-		cameraActive,
+		inputFotoRef,
+		memprosesFoto,
 		photoPreview,
 		photoData,
 		photoStatus,
 		fetchLocation,
-		openCamera,
-		capturePhoto,
-		retakePhoto,
-		stopCamera,
+		ambilFoto,
+		onFotoDipilih,
 		reset,
 		siap,
 		petunjuk,

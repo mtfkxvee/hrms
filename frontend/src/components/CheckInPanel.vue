@@ -39,7 +39,6 @@
 		trigger="open-checkin-modal"
 		:initial-breakpoint="1"
 		:breakpoints="[0, 1]"
-		@didDismiss="stopCamera"
 	>
 		<div class="h-120 w-full flex flex-col items-center justify-center gap-5 p-4 mb-5">
 			<div class="flex flex-col gap-1.5 mt-2 items-center justify-center">
@@ -89,39 +88,34 @@
 					v-if="photoPreview"
 					:src="photoPreview"
 					class="w-full max-w-xs rounded-lg border"
-					style="max-height: 200px; object-fit: cover; transform: scaleX(-1)"
+					style="max-height: 200px; object-fit: cover"
 				/>
-				<video
-					v-show="cameraActive && !photoPreview"
-					ref="videoRef"
-					autoplay
-					playsinline
-					class="w-full max-w-xs rounded-lg border"
-					style="max-height: 200px; object-fit: cover; transform: scaleX(-1)"
-				></video>
-				<canvas ref="canvasRef" style="display: none"></canvas>
+				<!-- X-Sha: selfie lewat aplikasi kamera bawaan HP -->
+				<input
+					ref="inputFotoRef"
+					type="file"
+					accept="image/*"
+					capture="user"
+					style="display: none"
+					@change="onFotoDipilih"
+				/>
 
 				<div class="flex gap-2 w-full">
 					<button
-						v-if="!cameraActive && !photoPreview"
-						@click="openCamera"
-						class="w-full py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium"
+						v-if="!photoPreview"
+						@click="ambilFoto"
+						:disabled="memprosesFoto"
+						class="w-full py-2 rounded-lg bg-blue-500 text-white text-sm font-medium disabled:opacity-60"
 					>
-						📷 {{ __("Buka Kamera") }}
+						📷 {{ memprosesFoto ? __("Memproses foto...") : __("Ambil Foto") }}
 					</button>
 					<button
-						v-if="cameraActive && !photoPreview"
-						@click="capturePhoto"
-						class="w-full py-2 rounded-lg bg-blue-500 text-white text-sm font-medium"
+						v-else
+						@click="ambilFoto"
+						:disabled="memprosesFoto"
+						class="w-full py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium disabled:opacity-60"
 					>
-						📸 {{ __("Ambil Foto") }}
-					</button>
-					<button
-						v-if="photoPreview"
-						@click="retakePhoto"
-						class="w-full py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium"
-					>
-						🔄 {{ __("Foto Ulang") }}
+						🔄 {{ memprosesFoto ? __("Memproses foto...") : __("Foto Ulang") }}
 					</button>
 				</div>
 
@@ -148,11 +142,9 @@ import { antrean, kirimAtauSimpan, saatTerkirim } from "@/offline/antrean"
 import { computed, inject, ref, onMounted, onBeforeUnmount } from "vue"
 import { IonModal, modalController } from "@ionic/vue"
 import { formatTimestamp } from "@/utils/formatters"
+import { bukaKameraHP, prosesFotoKamera } from "@/composables/kameraHP"
 
 const DOCTYPE = "Employee Checkin"
-// A08: rata-rata kecerahan minimal (0-255). Server memakai batas yang sama.
-const MIN_BRIGHTNESS = 35
-const MAX_PHOTO_SIDE = 960
 
 const socket = inject("$socket")
 const employee = inject("$employee")
@@ -165,13 +157,11 @@ const locationStatus = ref("")
 const locationHelp = ref("")
 const locationState = ref("idle") // idle | locating | ready | error
 
-const videoRef = ref(null)
-const canvasRef = ref(null)
-const cameraActive = ref(false)
+const inputFotoRef = ref(null)
+const memprosesFoto = ref(false)
 const photoPreview = ref(null)
 const photoData = ref(null)
 const photoStatus = ref("")
-let cameraStream = null
 
 const settings = createResource({
 	url: "hrms.api.get_hr_settings",
@@ -291,73 +281,32 @@ const handleEmployeeCheckin = () => {
 	photoPreview.value = null
 	photoData.value = null
 	photoStatus.value = ""
-	cameraActive.value = false
 	locationState.value = "idle"
 	if (geolocationRequired.value) fetchLocation()
 }
 
-function stopCamera() {
-	if (cameraStream) cameraStream.getTracks().forEach((t) => t.stop())
-	cameraStream = null
-	cameraActive.value = false
-}
-
-const openCamera = async () => {
-	try {
-		cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
-		cameraActive.value = true
-		photoStatus.value = ""
-		await new Promise((r) => setTimeout(r, 100))
-		if (videoRef.value) videoRef.value.srcObject = cameraStream
-	} catch (err) {
-		photoStatus.value = __("Tidak bisa membuka kamera: {0}", [err.message])
-	}
-}
-
-function averageBrightness(ctx, width, height) {
-	const { data } = ctx.getImageData(0, 0, width, height)
-	let total = 0
-	let count = 0
-	// sampling tiap 16 piksel cukup untuk rata-rata
-	for (let i = 0; i < data.length; i += 64) {
-		total += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
-		count++
-	}
-	return count ? total / count : 0
-}
-
+// X-Sha: selfie lewat kamera bawaan HP (lihat composables/kameraHP.js).
 // A07/A09: foto tidak di-upload saat diambil. Foto disimpan di memori dan dikirim
 // bersama check-in saat Confirm, lalu server menyimpannya sebagai file private.
-const capturePhoto = () => {
-	const video = videoRef.value
-	const canvas = canvasRef.value
-	if (!video || !canvas || !video.videoWidth) return
-
-	const scale = Math.min(1, MAX_PHOTO_SIDE / Math.max(video.videoWidth, video.videoHeight))
-	canvas.width = Math.round(video.videoWidth * scale)
-	canvas.height = Math.round(video.videoHeight * scale)
-	const ctx = canvas.getContext("2d")
-	ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-	stopCamera()
-
-	const dataUrl = canvas.toDataURL("image/jpeg", 0.8)
-	photoPreview.value = dataUrl
-
-	// A08: tolak foto gelap / kamera tertutup
-	if (averageBrightness(ctx, canvas.width, canvas.height) < MIN_BRIGHTNESS) {
-		photoData.value = null
-		photoStatus.value = __("Foto terlalu gelap. Pastikan wajah terlihat jelas, lalu foto ulang.")
-		return
-	}
-	photoData.value = dataUrl
-	photoStatus.value = __("Foto siap")
+// A08: foto gelap / kamera tertutup ditolak.
+function ambilFoto() {
+	photoStatus.value = ""
+	bukaKameraHP(inputFotoRef.value)
 }
 
-const retakePhoto = () => {
-	photoPreview.value = null
-	photoData.value = null
-	photoStatus.value = ""
-	openCamera()
+async function onFotoDipilih(event) {
+	const file = event.target.files?.[0]
+	if (!file) return
+	memprosesFoto.value = true
+	try {
+		const hasil = await prosesFotoKamera(file, __)
+		photoPreview.value = hasil.preview || null
+		photoData.value = hasil.ok ? hasil.dataUrl : null
+		photoStatus.value = hasil.pesan || ""
+	} finally {
+		memprosesFoto.value = false
+		event.target.value = ""
+	}
 }
 
 const mengirim = ref(false)
@@ -405,7 +354,6 @@ const submitLog = async (logType) => {
 	}
 
 	if (hasil.ok || hasil.tersimpan) {
-		stopCamera()
 		modalController.dismiss()
 	}
 	if (hasil.ok) {
@@ -451,7 +399,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
 	hentikanPendengarAntrean()
-	stopCamera()
 	socket.emit("doctype_unsubscribe", DOCTYPE)
 	socket.off("list_update")
 })
