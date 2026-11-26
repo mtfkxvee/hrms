@@ -10,6 +10,20 @@
 							</h2>
 						</div>
 						<div class="flex flex-row items-center gap-3 ml-auto">
+							<!-- X-Sha: muat ulang aplikasi (sekalian ambil versi terbaru) -->
+							<button
+								type="button"
+								class="flex flex-col items-center"
+								:disabled="memuatUlang"
+								:aria-label="__('Muat ulang aplikasi')"
+								@click="muatUlang"
+							>
+								<FeatherIcon
+									name="refresh-cw"
+									class="h-6 w-6"
+									:class="{ 'animate-spin': memuatUlang }"
+								/>
+							</button>
 							<router-link
 								:to="{ name: 'Notifications' }"
 								v-slot="{ navigate }"
@@ -54,9 +68,29 @@ import { FeatherIcon, Avatar } from "frappe-ui"
 
 import { unreadNotificationsCount } from "@/data/notifications"
 
-import { inject } from "vue"
+import { inject, ref } from "vue"
 
 const user = inject("$user")
+
+const memuatUlang = ref(false)
+
+// Cek versi baru di server (service worker) maksimal 3 detik, lalu muat ulang penuh.
+async function muatUlang() {
+	if (memuatUlang.value) return
+	memuatUlang.value = true
+	try {
+		if ("serviceWorker" in navigator) {
+			const regs = await navigator.serviceWorker.getRegistrations()
+			await Promise.race([
+				Promise.allSettled(regs.map((r) => r.update())),
+				new Promise((r) => setTimeout(r, 3000)),
+			])
+		}
+	} catch (e) {
+		// tetap muat ulang walau cek versi gagal (mis. sedang offline)
+	}
+	window.location.reload()
+}
 
 const props = defineProps({
 	pageTitle: {

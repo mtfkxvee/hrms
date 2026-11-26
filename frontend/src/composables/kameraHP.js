@@ -136,8 +136,10 @@ export function buatSelfie(__) {
 	const photoData = ref(null)
 	const photoStatus = ref("")
 	let stream = null
+	let sesi = 0 // naik tiap kamera dihentikan; membatalkan pembukaan kamera yang masih berjalan
 
 	function stopCamera() {
+		sesi++
 		if (stream) stream.getTracks().forEach((t) => t.stop())
 		stream = null
 		cameraActive.value = false
@@ -149,13 +151,27 @@ export function buatSelfie(__) {
 			photoStatus.value = __("Browser ini tidak mendukung akses kamera.") + " " + __(SARAN_KAMERA_HP)
 			return
 		}
+		stopCamera()
+		const sesiIni = sesi
 		membukaKamera.value = true
 		try {
-			stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+			const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+			if (sesiIni !== sesi) {
+				// pop-up sudah ditutup / kamera dihentikan selama menunggu izin: matikan lagi
+				s.getTracks().forEach((t) => t.stop())
+				return
+			}
+			stream = s
 			cameraActive.value = true
 			await new Promise((r) => setTimeout(r, 100))
-			if (videoRef.value) videoRef.value.srcObject = stream
+			const video = videoRef.value
+			if (video && sesiIni === sesi) {
+				video.srcObject = s
+				// sebagian Android tidak memulai video otomatis walau ada autoplay
+				video.play?.()?.catch?.(() => {})
+			}
 		} catch (err) {
+			if (sesiIni !== sesi) return
 			stopCamera()
 			const ditolak = err?.name === "NotAllowedError" || err?.name === "SecurityError"
 			photoStatus.value =
