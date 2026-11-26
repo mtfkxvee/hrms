@@ -44,23 +44,9 @@
 				<div v-if="info.data?.saldo_pjk" class="text-xs text-gray-500">
 					{{ __("Employee PJK balance: {0} hrs (+{1} hrs in process), limit {2} hrs", [info.data.saldo_pjk.saldo, info.data.saldo_pjk.rencana, info.data.saldo_pjk.batas]) }}
 				</div>
-				<template v-if="kompensasi === 'PJK'">
-					<label class="text-sm text-gray-600">{{ __("PJK Date") }}</label>
-					<input type="date" v-model="pjkTanggal" :min="minPjk" class="w-full rounded border-gray-300 text-base" />
-					<div class="text-xs text-gray-500">
-						{{ __("PJK at the start of the shift = may arrive later; at the end of the shift = may leave earlier.") }}
-					</div>
-					<div class="flex flex-row gap-2">
-						<div class="flex-1 flex flex-col gap-1">
-							<label class="text-sm text-gray-600">{{ __("From Time") }}</label>
-							<input type="time" v-model="pjkMulai" class="w-full rounded border-gray-300 text-base" />
-						</div>
-						<div class="flex-1 flex flex-col gap-1">
-							<label class="text-sm text-gray-600">{{ __("To Time") }}</label>
-							<input type="time" v-model="pjkSelesai" class="w-full rounded border-gray-300 text-base" />
-						</div>
-					</div>
-				</template>
+				<div v-if="kompensasi === 'PJK'" class="text-xs text-gray-500">
+					{{ __("PJK hours are added to the employee's PJK balance and can be taken at any time (they do not expire).") }}
+				</div>
 			</div>
 
 			<!-- Konfirmasi: karyawan lupa menekan Selesai -->
@@ -136,9 +122,6 @@ const props = defineProps({
 
 const API = "hrms.xsha.lembur."
 const kompensasi = ref("")
-const pjkTanggal = ref("")
-const pjkMulai = ref("")
-const pjkSelesai = ref("")
 const jamSelesaiManual = ref("")
 const modeTolak = ref(false)
 const alasanTolak = ref("")
@@ -159,7 +142,6 @@ const aksiLoading = ref(false)
 const d = computed(() => doc.data || {})
 const formatTgl = (v) => (v ? dayjs(v).format("ddd, D MMM YYYY") : "")
 const formatWaktu = (v) => (v ? dayjs(v).format("D MMM, HH.mm") : "")
-const minPjk = computed(() => (d.value.tanggal ? dayjs(d.value.tanggal).add(1, "day").format("YYYY-MM-DD") : ""))
 
 watch(
 	() => doc.data,
@@ -229,12 +211,7 @@ function kirim(method, args) {
 
 function setujui() {
 	if (info.data?.bisa_setujui_atasan) {
-		kirim("setujui_atasan", {
-			kompensasi: kompensasi.value,
-			pjk_tanggal: kompensasi.value === "PJK" ? pjkTanggal.value : null,
-			pjk_jam_mulai: kompensasi.value === "PJK" ? pjkMulai.value : null,
-			pjk_jam_selesai: kompensasi.value === "PJK" ? pjkSelesai.value : null,
-		})
+		kirim("setujui_atasan", { kompensasi: kompensasi.value })
 	} else {
 		kirim("setujui_hrd", {})
 	}

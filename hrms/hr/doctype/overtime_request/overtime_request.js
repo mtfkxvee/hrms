@@ -18,9 +18,6 @@ frappe.ui.form.on("Overtime Request", {
 						title: __("Approve Overtime"),
 						fields: [
 							{ fieldname: "kompensasi", label: __("Compensation"), fieldtype: "Select", options: "PJK\nPaid Overtime", reqd: 1 },
-							{ fieldname: "pjk_tanggal", label: __("PJK Date"), fieldtype: "Date", depends_on: "eval:doc.kompensasi=='PJK'" },
-							{ fieldname: "pjk_jam_mulai", label: __("PJK From Time"), fieldtype: "Time", depends_on: "eval:doc.kompensasi=='PJK'" },
-							{ fieldname: "pjk_jam_selesai", label: __("PJK To Time"), fieldtype: "Time", depends_on: "eval:doc.kompensasi=='PJK'" },
 						],
 						primary_action_label: __("Approve"),
 						primary_action(values) {

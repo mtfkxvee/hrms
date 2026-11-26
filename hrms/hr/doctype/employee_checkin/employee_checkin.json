@@ -15,6 +15,7 @@
   "device_id",
   "skip_auto_attendance",
   "attendance",
+  "pjk_jam",
   "location_section",
   "latitude",
   "column_break_yqpi",
@@ -93,6 +94,15 @@
    "fieldtype": "Link",
    "label": "Attendance Marked",
    "options": "Attendance",
+   "read_only": 1
+  },
+  {
+   "description": "Jam PJK yang dipakai untuk datang terlambat / pulang lebih awal (pop-up saat absen).",
+   "fieldname": "pjk_jam",
+   "fieldtype": "Float",
+   "label": "PJK Dipakai (jam)",
+   "no_copy": 1,
+   "precision": "1",
    "read_only": 1
   },
   {
@@ -177,7 +187,7 @@
   }
  ],
  "links": [],
- "modified": "2025-03-05 15:36:10.014354",
+ "modified": "2026-11-25 17:00:00.000000",
  "modified_by": "Administrator",
  "module": "HR",
  "name": "Employee Checkin",

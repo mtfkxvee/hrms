@@ -232,7 +232,9 @@ doc_events = {
 	# X-Sha: aturan tambahan, lihat hrms/xsha/rules.py
 	"Employee Checkin": {
 		"before_validate": "hrms.xsha.rules.checkin_before_validate",
-		"validate": "hrms.xsha.rules.checkin_validate",
+		"validate": ["hrms.xsha.rules.checkin_validate", "hrms.xsha.pjk.checkin_validate"],
+		# X-Sha: PJK yang dipakai check-in ini dikembalikan bila check-in dihapus
+		"on_trash": "hrms.xsha.pjk.checkin_on_trash",
 	},
 	"Shift Request": {
 		"validate": "hrms.xsha.rules.shift_request_validate",
@@ -289,7 +291,6 @@ scheduler_events = {
 		"hrms.hr.doctype.interview.interview.send_daily_feedback_reminder",
 		"hrms.hr.doctype.job_opening.job_opening.close_expired_job_openings",
 		"hrms.xsha.reminders.send_pending_approval_digest",
-		"hrms.xsha.lembur.hanguskan_pjk",
 	],
 	"daily_long": [
 		"hrms.hr.doctype.leave_ledger_entry.leave_ledger_entry.process_expired_allocation",

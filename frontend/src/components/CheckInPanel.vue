@@ -138,10 +138,10 @@
 </template>
 
 <script setup>
-import { createResource, createListResource, toast, FeatherIcon } from "frappe-ui"
-import { antrean, kirimAtauSimpan, saatTerkirim } from "@/offline/antrean"
+import { createResource, createListResource, toast, FeatherIcon, call } from "frappe-ui"
+import { antrean, itemMenunggu, kirimAtauSimpan, saatTerkirim } from "@/offline/antrean"
 import { computed, inject, ref, onMounted, onBeforeUnmount } from "vue"
-import { IonModal, modalController } from "@ionic/vue"
+import { IonModal, modalController, alertController } from "@ionic/vue"
 import { formatTimestamp } from "@/utils/formatters"
 import { bukaKameraHP, prosesFotoKamera } from "@/composables/kameraHP"
 
@@ -321,7 +321,7 @@ async function onFotoDipilih(event) {
 
 const mengirim = ref(false)
 
-function toastSukses(actionLabel, data) {
+function toastSukses(actionLabel, data, pjkDisetujui = 0) {
 	// A10: log di luar shift tidak akan menjadi Attendance, beri tahu karyawan
 	if (data?.offshift) {
 		toast({
@@ -337,25 +337,97 @@ function toastSukses(actionLabel, data) {
 		})
 		return
 	}
+	if (pjkDisetujui && !data?.pjk_jam) {
+		toast({
+			title: __("Success"),
+			text: __(
+				"{0} berhasil, tapi PJK tidak dipakai karena waktunya sudah berubah. Hubungi atasan/HRD bila perlu.",
+				[actionLabel]
+			),
+			icon: "alert-triangle",
+			position: "bottom-center",
+			iconClasses: "text-yellow-500",
+			timeout: 8,
+		})
+		return
+	}
 	toast({
 		title: __("Success"),
-		text: __("{0} successful!", [actionLabel]),
+		text: data?.pjk_jam
+			? __("{0} berhasil. Saldo PJK terpakai {1} jam.", [actionLabel, jamPjk(data.pjk_jam)])
+			: __("{0} successful!", [actionLabel]),
 		icon: "check-circle",
 		position: "bottom-center",
 		iconClasses: "text-green-500",
 	})
 }
 
+// X-Sha PJK: tawaran pakai saldo PJK saat datang terlambat / pulang lebih awal.
+// Hanya saat online; gagal/lambat dicek = absen biasa tanpa pop-up.
+async function tawaranPjk(logType) {
+	if (!navigator.onLine || itemMenunggu().length) return null
+	try {
+		const tawaran = await Promise.race([
+			call("hrms.xsha.pjk.cek_pjk", { log_type: logType }),
+			new Promise((resolve) => setTimeout(() => resolve(null), 5000)),
+		])
+		return tawaran?.jam ? tawaran : null
+	} catch (e) {
+		return null
+	}
+}
+
+const jamPjk = (v) => String(Math.round(Number(v || 0) * 10) / 10).replace(".", ",")
+
+async function tanyaPjk(t) {
+	const telat = t.log_type === "IN"
+	const baris = [
+		telat
+			? __("Kamu terlambat {0}.", [t.label_menit])
+			: __("Kamu pulang {0} lebih awal.", [t.label_menit]),
+		telat
+			? __("Apakah kamu akan menggunakan saldo PJK {0} jam untuk keterlambatan ini?", [t.jam])
+			: __("Apakah kamu akan menggunakan saldo PJK {0} jam untuk pulang lebih awal?", [t.jam]),
+		__("Saldo PJK: {0} jam", [jamPjk(t.saldo)]),
+	]
+	if (t.tetap_menit) {
+		baris.push(
+			telat
+				? __("Kamu tetap tercatat terlambat {0}.", [t.label_tetap])
+				: __("Kamu tetap tercatat pulang lebih awal {0}.", [t.label_tetap])
+		)
+	}
+	const alert = await alertController.create({
+		header: __("Konfirmasi PJK"),
+		message: baris.join("\n"),
+		cssClass: "xsha-alert-pjk",
+		backdropDismiss: false,
+		buttons: [
+			{ text: __("Tidak"), role: "tidak" },
+			{ text: __("Ya, pakai PJK"), role: "ya" },
+		],
+	})
+	await alert.present()
+	const { role } = await alert.onDidDismiss()
+	return role === "ya"
+}
+
 const submitLog = async (logType) => {
 	const actionLabel = logType === "IN" ? __("Check-in") : __("Check-out")
 	mengirim.value = true
 	let hasil
+	let pjkDisetujui = 0
 	try {
+		const tawaran = await tawaranPjk(logType)
+		const ambilPjk = tawaran ? await tanyaPjk(tawaran) : false
+		pjkDisetujui = ambilPjk ? tawaran.jam : 0
 		hasil = await kirimAtauSimpan("checkin", "hrms.xsha.checkin.create_checkin", {
 			log_type: logType,
 			latitude: latitude.value,
 			longitude: longitude.value,
 			photo: photoData.value,
+			// jumlah jam yang disetujui; server hanya memotong saldo bila hitungannya sama
+			...(ambilPjk ? { ambil_pjk: tawaran.jam } : {}),
 		})
 	} catch (error) {
 		hasil = { pesan: error?.message }
@@ -368,7 +440,7 @@ const submitLog = async (logType) => {
 	}
 	if (hasil.ok) {
 		checkins.reload()
-		toastSukses(actionLabel, hasil.data)
+		toastSukses(actionLabel, hasil.data, pjkDisetujui)
 		return
 	}
 	if (hasil.tersimpan) {
@@ -413,3 +485,10 @@ onBeforeUnmount(() => {
 	socket.off("list_update")
 })
 </script>
+
+<style>
+/* X-Sha PJK: pesan konfirmasi PJK per baris */
+.xsha-alert-pjk .alert-message {
+	white-space: pre-line;
+}
+</style>

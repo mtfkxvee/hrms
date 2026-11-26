@@ -53,18 +53,21 @@
 						<div class="flex flex-row items-center justify-between">
 							<span class="text-base text-gray-700">{{ __("PJK Balance") }}</span>
 							<span class="text-base font-semibold text-gray-900">
-								{{ __("{0} / {1} hrs", [saldoPjk.data?.saldo || 0, saldoPjk.data?.batas || 9]) }}
+								{{ __("{0} hrs", [saldoPjk.data?.saldo || 0]) }}
 							</span>
 						</div>
-						<div
-							v-for="j in saldoPjk.data?.jadwal || []"
-							:key="j.name"
-							class="text-xs text-gray-500"
-						>
-							{{ __("Take {0} hrs: {1}, {2} - {3}", [j.jam_dihitung, dayjs(j.pjk_tanggal).format("ddd, D MMM"), jamPendek(j.pjk_jam_mulai), jamPendek(j.pjk_jam_selesai)]) }}
+						<div class="text-xs text-gray-500">
+							{{ __("PJK can be taken at any time and does not expire.") }}
 						</div>
-						<div v-if="!(saldoPjk.data?.jadwal || []).length" class="text-xs text-gray-500">
-							{{ __("Missed PJK schedules expire.") }}
+						<div
+							v-for="(r, i) in saldoPjk.data?.riwayat || []"
+							:key="i"
+							class="flex flex-row justify-between gap-2 text-xs text-gray-600"
+						>
+							<span class="truncate">{{ dayjs(r.waktu).format("D MMM") }} &middot; {{ r.keterangan || r.sumber }}</span>
+							<span class="shrink-0 font-medium" :class="r.perubahan < 0 ? 'text-red-600' : 'text-green-700'">
+								{{ (r.perubahan > 0 ? "+" : "") + r.perubahan }} {{ __("hrs") }}
+							</span>
 						</div>
 					</div>
 					<router-link :to="{ name: 'OvertimeRequestFormView' }" v-slot="{ navigate }">
@@ -96,7 +99,7 @@ import ShiftAssignmentItem from "@/components/ShiftAssignmentItem.vue"
 import RequestList from "@/components/RequestList.vue"
 import AttendanceCalendar from "@/components/AttendanceCalendar.vue"
 import LemburItem from "@/components/LemburItem.vue"
-import { myLembur, saldoPjk, jamPendek } from "@/data/lembur"
+import { myLembur, saldoPjk } from "@/data/lembur"
 
 import {
 	getShiftDates,

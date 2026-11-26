@@ -13,7 +13,10 @@ Aturan hitung (SOP):
 - jam dihitung dari waktu nyata Mulai/Selesai Lembur
 - tiap jam penuh dihitung 1; sisa >= 45 menit dibulatkan 1 jam, < 45 menit tidak dihitung
 - maksimal 3 jam per hari dan tidak melebihi jam di SPL
-- PJK 1 : 1, saldo maksimal 9 jam; jadwal ambil PJK terlewat = hangus
+- PJK 1 : 1; lembur hanya boleh jadi PJK bila saldo + lembur ini <= 9 jam
+- saldo PJK disimpan di doctype PJK Balance (per karyawan): bertambah saat lembur PJK dikonfirmasi,
+  dan HRD bisa menambah/mengurangi manual kapan saja (boleh lebih dari 9 jam)
+- PJK tidak dijadwalkan saat persetujuan dan tidak hangus (bisa diambil kapan saja)
 """
 
 import datetime
@@ -143,21 +146,17 @@ def is_tanggal_merah(tanggal) -> bool:
 
 
 def get_saldo_pjk(employee: str, exclude: str | None = None) -> dict:
-	"""Saldo PJK = jam lembur PJK yang sudah Selesai dan belum diambil.
+	"""Saldo = angka di doctype PJK Balance karyawan.
 
 	Rencana = jam PJK dari pengajuan yang sudah disetujui atasan tapi belum selesai,
 	dipakai untuk mengecek batas 9 jam sebelum lembur berikutnya disetujui.
 	"""
+	from hrms.hr.doctype.pjk_balance.pjk_balance import get_saldo
+
 	filters = {"employee": employee, "kompensasi": "PJK"}
 	if exclude:
 		filters["name"] = ["!=", exclude]
 
-	saldo = sum(
-		cint(r.jam_dihitung)
-		for r in frappe.get_all(
-			DOCTYPE, filters={**filters, "status": "Completed", "status_pjk": "Not Taken"}, fields=["jam_dihitung"]
-		)
-	)
 	rencana = sum(
 		bulatkan_jam(round(flt(r.durasi_rencana) * 60))
 		for r in frappe.get_all(
@@ -166,13 +165,7 @@ def get_saldo_pjk(employee: str, exclude: str | None = None) -> dict:
 			fields=["durasi_rencana"],
 		)
 	)
-	jadwal = frappe.get_all(
-		DOCTYPE,
-		filters={**filters, "status": "Completed", "status_pjk": "Not Taken"},
-		fields=["name", "jam_dihitung", "pjk_tanggal", "pjk_jam_mulai", "pjk_jam_selesai"],
-		order_by="pjk_tanggal asc",
-	)
-	return {"saldo": saldo, "rencana": rencana, "batas": SALDO_PJK_MAKS, "jadwal": jadwal}
+	return {"saldo": get_saldo(employee), "rencana": rencana, "batas": SALDO_PJK_MAKS, "jadwal": []}
 
 
 def _notify(doc, to_user: str | None, message: str):
@@ -471,6 +464,8 @@ def _wajib_hrd(doc):
 
 @frappe.whitelist(methods=["POST"])
 def setujui_atasan(name: str, kompensasi: str, pjk_tanggal=None, pjk_jam_mulai=None, pjk_jam_selesai=None):
+	# pjk_tanggal/pjk_jam_* tetap diterima agar aplikasi/halaman lama tidak error, tapi diabaikan:
+	# PJK tidak dijadwalkan lagi saat persetujuan (bisa diambil kapan saja, tidak hangus).
 	doc = _ambil(name, ("Pending Supervisor",))
 	_bukan_pemohon(doc, _("approve"))
 	_wajib_atasan(doc)
@@ -482,13 +477,6 @@ def setujui_atasan(name: str, kompensasi: str, pjk_tanggal=None, pjk_jam_mulai=N
 	doc.saldo_pjk_penuh = 0
 
 	if kompensasi == "PJK":
-		if not (pjk_tanggal and pjk_jam_mulai and pjk_jam_selesai):
-			frappe.throw(_("For PJK, enter the PJK date and time."))
-		if getdate(pjk_tanggal) <= getdate(doc.tanggal):
-			frappe.throw(_("PJK Date must be after the overtime date."))
-		if durasi_jam(pjk_jam_mulai, pjk_jam_selesai) <= 0:
-			frappe.throw(_("PJK To Time must be after From Time."))
-		doc.pjk_tanggal, doc.pjk_jam_mulai, doc.pjk_jam_selesai = pjk_tanggal, pjk_jam_mulai, pjk_jam_selesai
 		saldo = get_saldo_pjk(doc.employee, exclude=doc.name)
 		jam_baru = bulatkan_jam(round(flt(doc.durasi_rencana) * 60))
 		doc.saldo_pjk_penuh = cint(saldo["saldo"] + saldo["rencana"] + jam_baru > SALDO_PJK_MAKS)
@@ -678,9 +666,14 @@ def konfirmasi(name: str, jam_selesai_manual=None):
 	doc.status = "Completed"
 	doc.dikonfirmasi_oleh = frappe.session.user
 	doc.dikonfirmasi_pada = now_datetime()
-	if doc.kompensasi == "PJK" and cint(doc.jam_dihitung) > 0:
-		doc.status_pjk = "Not Taken"
+	pjk_masuk = doc.kompensasi == "PJK" and flt(doc.jam_dihitung) > 0
+	if pjk_masuk:
+		doc.status_pjk = "Added to Balance"
 	hasil = _simpan(doc, "konfirmasi")
+	if pjk_masuk:
+		from hrms.hr.doctype.pjk_balance.pjk_balance import ubah_saldo_pjk
+
+		ubah_saldo_pjk(doc.employee, doc.jam_dihitung, "Lembur", doc.name, f"Lembur {frappe.format(doc.tanggal, 'Date')}")
 	pesan = f"{bold('Overtime Request')} {doc.name} confirmed: {doc.jam_dihitung} hours ({_(doc.kompensasi)})"
 	_notify(doc, _employee_user(doc.employee), pesan)
 	return hasil
@@ -783,8 +776,20 @@ def get_lembur_hari_ini() -> list[dict]:
 def get_saldo_pjk_saya() -> dict:
 	employee = frappe.db.get_value("Employee", {"user_id": frappe.session.user, "status": "Active"}, "name")
 	if not employee:
-		return {"saldo": 0, "rencana": 0, "batas": SALDO_PJK_MAKS, "jadwal": []}
-	return get_saldo_pjk(employee)
+		return {"saldo": 0, "rencana": 0, "batas": SALDO_PJK_MAKS, "jadwal": [], "riwayat": []}
+	hasil = get_saldo_pjk(employee)
+	hasil["riwayat"] = (
+		frappe.get_all(
+			"PJK Balance History",
+			filters={"parenttype": "PJK Balance", "parent": employee},
+			fields=["waktu", "sumber", "perubahan", "keterangan"],
+			order_by="waktu desc, idx desc",
+			limit=5,
+		)
+		if frappe.db.table_exists("PJK Balance History")
+		else []
+	)
+	return hasil
 
 
 @frappe.whitelist()
@@ -812,40 +817,6 @@ def get_info_persetujuan(name: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def hanguskan_pjk():
-	"""Harian: PJK yang jadwal ambilnya sudah lewat dan belum diambil menjadi Expired."""
-	for name in frappe.get_all(
-		DOCTYPE,
-		filters={"status_pjk": "Not Taken", "pjk_tanggal": ["<", nowdate()]},
-		pluck="name",
-	):
-		frappe.db.set_value(DOCTYPE, name, "status_pjk", "Expired")
-
-
-def _pjk_hari_itu(employee: str, tanggal):
-	# Jangan pernah menggagalkan Auto Attendance: lewati jika tabel lembur belum ada (belum migrate).
-	if not frappe.db.table_exists(DOCTYPE):
-		return []
-	return frappe.get_all(
-		DOCTYPE,
-		filters={"employee": employee, "status_pjk": "Not Taken", "pjk_tanggal": getdate(tanggal)},
-		fields=["name", "jam_dihitung", "pjk_jam_mulai", "pjk_jam_selesai"],
-	)
-
-
-def _pjk_di_awal_shift(p, shift_start, shift_end) -> bool:
-	"""PJK di awal shift (boleh datang lebih siang) bila jam mulainya sebelum tengah shift.
-
-	PJK lama tanpa jam mulai dianggap di akhir shift (pulang lebih awal), seperti aturan sebelumnya.
-	"""
-	if not p.pjk_jam_mulai:
-		return False
-	mulai = datetime.datetime.combine(shift_start.date(), datetime.time()) + _as_timedelta(p.pjk_jam_mulai)
-	if mulai < shift_start - datetime.timedelta(hours=12):
-		mulai += datetime.timedelta(days=1)  # shift malam: PJK setelah tengah malam
-	return mulai < shift_start + (shift_end - shift_start) / 2
-
-
 def _rentang_shift(shift_type: str, tanggal):
 	"""(mulai, selesai, toleransi telat, toleransi pulang cepat) shift pada tanggal itu, atau None."""
 	row = frappe.db.get_value(
@@ -862,62 +833,38 @@ def _rentang_shift(shift_type: str, tanggal):
 
 
 def menit_pjk_awal(employee: str, tanggal, shift_type: str) -> int:
-	"""Jatah datang lebih siang (menit) dari PJK awal shift yang belum diambil. Dipakai HR Dashboard."""
+	"""Jatah datang lebih siang (menit) dari PJK yang dipakai saat check-in. Dipakai HR Dashboard."""
 	if not (employee and tanggal and shift_type):
 		return 0
-	pjk = _pjk_hari_itu(employee, tanggal)
-	shift = _rentang_shift(shift_type, tanggal) if pjk else None
-	if not shift:
-		return 0
-	return 60 * sum(cint(p.jam_dihitung) for p in pjk if _pjk_di_awal_shift(p, shift[0], shift[1]))
+	from hrms.xsha.pjk import menit_pjk_awal as menit
+
+	return menit(employee, tanggal, shift_type)
 
 
 def attendance_before_submit(doc, method=None):
-	"""PJK lembur dipakai di hari absensi dan PJK tercatat diambil.
+	"""PJK yang dipakai saat check-in/out (pop-up) menghapus tanda telat / pulang cepat.
 
-	- PJK di awal shift: datang terlambat sampai jatah jam PJK (+ toleransi telat) tidak dihitung telat.
-	- PJK di akhir shift: pulang lebih awal dalam jatah jam PJK (- toleransi) tidak dihitung pulang cepat.
-	Datang/pulang normal (PJK tidak dipakai) tidak mengubah apa pun; PJK hangus esok harinya.
+	Lihat hrms/xsha/pjk.py. Jangan pernah menggagalkan Auto Attendance karena PJK.
 	"""
 	if not doc.employee or not doc.attendance_date or not doc.shift:
 		return
-	pjk = _pjk_hari_itu(doc.employee, doc.attendance_date)
-	if not pjk:
-		return
-
 	shift = _rentang_shift(doc.shift, doc.attendance_date)
 	if not shift:
 		return
-	shift_start, shift_end, grace_masuk, grace_pulang = shift
+	from hrms.xsha import pjk
 
-	awal = [p for p in pjk if _pjk_di_awal_shift(p, shift_start, shift_end)]
-	akhir = [p for p in pjk if p not in awal]
-	diambil = []
-
-	# Datang lebih siang dalam jatah PJK awal shift: tidak dihitung telat.
-	if awal and doc.in_time:
-		in_time = get_datetime(doc.in_time)
-		toleransi = datetime.timedelta(minutes=cint(grace_masuk))
-		jam = sum(cint(p.jam_dihitung) for p in awal)
-		if shift_start + toleransi < in_time <= shift_start + datetime.timedelta(hours=jam) + toleransi:
-			doc.late_entry = 0
-			diambil += [p.name for p in awal]
-
-	# Pulang lebih awal dalam jatah PJK akhir shift: tidak dihitung pulang cepat.
-	if akhir and doc.out_time:
-		out_time = get_datetime(doc.out_time)
-		toleransi = datetime.timedelta(minutes=cint(grace_pulang))
-		jam = sum(cint(p.jam_dihitung) for p in akhir)
-		if shift_end - datetime.timedelta(hours=jam) - toleransi <= out_time < shift_end - toleransi:
-			doc.early_exit = 0
-			diambil += [p.name for p in akhir]
-
-	if diambil:
-		doc.flags.xsha_pjk = diambil
+	try:
+		pjk.attendance_before_submit(doc, *shift)
+	except Exception:
+		frappe.log_error(title=f"PJK Attendance {doc.employee}")
 
 
 def attendance_on_submit(doc, method=None):
-	for name in doc.flags.get("xsha_pjk") or []:
-		frappe.db.set_value(
-			DOCTYPE, name, {"status_pjk": "Taken", "pjk_diambil_pada": doc.attendance_date}, update_modified=False
-		)
+	from hrms.xsha import pjk
+
+	try:
+		frappe.db.savepoint("xsha_pjk_attendance")
+		pjk.attendance_on_submit(doc)
+	except Exception:
+		frappe.db.rollback(save_point="xsha_pjk_attendance")
+		frappe.log_error(title=f"PJK Attendance {doc.employee}")

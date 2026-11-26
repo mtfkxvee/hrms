@@ -30,6 +30,16 @@ function muatGambar(file) {
 	})
 }
 
+// Coba dua cara: sebagian HP gagal di <img> tapi bisa lewat createImageBitmap, atau sebaliknya.
+async function bacaGambar(file) {
+	try {
+		return await muatGambar(file)
+	} catch (err) {
+		if (typeof createImageBitmap !== "function") throw err
+		return await createImageBitmap(file, { imageOrientation: "from-image" })
+	}
+}
+
 function kecerahanRata(ctx, width, height) {
 	const { data } = ctx.getImageData(0, 0, width, height)
 	let total = 0
@@ -58,11 +68,29 @@ export async function prosesFotoKamera(file, __) {
 		}
 	}
 
+	if (!file.size) {
+		// kamera mengembalikan file kosong (biasanya Chrome sempat ditutup sistem karena memori HP penuh)
+		return {
+			ok: false,
+			pesan: __("Foto tidak tersimpan. Tutup aplikasi lain yang terbuka, lalu foto ulang."),
+		}
+	}
+
 	let img
 	try {
-		img = await muatGambar(file)
+		img = await bacaGambar(file)
 	} catch (err) {
-		return { ok: false, pesan: __("Foto tidak bisa dibaca. Silakan foto ulang.") }
+		const heif = /hei[cf]/i.test(file.type || "") || /\.hei[cf]$/i.test(file.name || "")
+		return {
+			ok: false,
+			pesan: heif
+				? __(
+						"Format foto HEIF tidak didukung. Matikan 'Gambar efisiensi tinggi (HEIF)' di pengaturan Kamera, lalu foto ulang."
+				  )
+				: __(
+						"Foto tidak bisa dibaca. Coba matikan 'Gambar efisiensi tinggi (HEIF)' di pengaturan Kamera, lalu foto ulang."
+				  ),
+		}
 	}
 
 	const lebar = img.naturalWidth || img.width

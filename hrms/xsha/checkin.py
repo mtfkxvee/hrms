@@ -70,8 +70,11 @@ def selfie_required() -> bool:
 
 
 @frappe.whitelist(methods=["POST"])
-def create_checkin(log_type: str, latitude=None, longitude=None, photo: str | None = None) -> dict:
-	return buat_checkin(log_type, latitude, longitude, photo)
+def create_checkin(
+	log_type: str, latitude=None, longitude=None, photo: str | None = None, ambil_pjk=0
+) -> dict:
+	# ambil_pjk=N: karyawan memilih "Ya, pakai PJK" N jam di pop-up (hrms.xsha.pjk.cek_pjk)
+	return buat_checkin(log_type, latitude, longitude, photo, ambil_pjk=ambil_pjk)
 
 
 def buat_checkin(
@@ -81,6 +84,7 @@ def buat_checkin(
 	photo: str | None = None,
 	waktu_offline=None,
 	offline_id: str | None = None,
+	ambil_pjk=0,
 ) -> dict:
 	"""Buat log check-in milik user yang login.
 
@@ -134,7 +138,15 @@ def buat_checkin(
 			checkin.custom_offline = 1
 			checkin.custom_offline_id = offline_id
 			checkin.custom_waktu_terkirim = now_datetime()
+		pjk_dipakai = None
+		if not waktu_offline:
+			from hrms.xsha import pjk
+
+			# dihitung ulang di server; kalau sudah tidak memenuhi, jadi check-in biasa
+			pjk_dipakai = pjk.siapkan(checkin, ambil_pjk)
 		checkin.insert()
+		if pjk_dipakai:
+			pjk.potong_saldo(checkin, pjk_dipakai)
 
 		if file_doc:
 			file_doc.db_set(
@@ -160,4 +172,5 @@ def buat_checkin(
 		"time": checkin.time,
 		"shift": checkin.shift,
 		"offshift": cint(checkin.offshift),
+		"pjk_jam": flt(checkin.get("pjk_jam")),
 	}
