@@ -50,7 +50,16 @@
 					class="w-full max-w-xs rounded-lg border"
 					style="max-height: 200px; object-fit: cover"
 				/>
-				<!-- X-Sha: selfie lewat aplikasi kamera bawaan HP -->
+				<!-- X-Sha: default kamera di aplikasi; kamera bawaan HP hanya opsi bila bermasalah -->
+				<video
+					v-show="s.cameraActive.value && !s.photoPreview.value"
+					:ref="(el) => (s.videoRef.value = el)"
+					autoplay
+					playsinline
+					muted
+					class="w-full max-w-xs rounded-lg border"
+					style="max-height: 200px; object-fit: cover; transform: scaleX(-1)"
+				></video>
 				<input
 					:ref="(el) => (s.inputFotoRef.value = el)"
 					type="file"
@@ -61,22 +70,37 @@
 				/>
 				<div class="flex gap-2 w-full">
 					<button
-						v-if="!s.photoPreview.value"
-						@click="s.ambilFoto"
-						:disabled="s.memprosesFoto.value"
-						class="w-full py-2 rounded-lg bg-blue-500 text-white text-sm font-medium disabled:opacity-60"
-					>
-						📷 {{ s.memprosesFoto.value ? __("Memproses foto...") : __("Ambil Foto") }}
-					</button>
-					<button
-						v-else
-						@click="s.ambilFoto"
-						:disabled="s.memprosesFoto.value"
+						v-if="!s.cameraActive.value && !s.photoPreview.value"
+						@click="s.openCamera"
+						:disabled="s.membukaKamera.value || s.memprosesFoto.value"
 						class="w-full py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium disabled:opacity-60"
 					>
-						🔄 {{ s.memprosesFoto.value ? __("Memproses foto...") : __("Foto Ulang") }}
+						{{ s.memprosesFoto.value ? __("Memproses foto…") : s.membukaKamera.value ? __("Membuka kamera…") : __("Buka Kamera") }}
+					</button>
+					<button
+						v-if="s.cameraActive.value && !s.photoPreview.value"
+						@click="s.capturePhoto"
+						class="w-full py-2 rounded-lg bg-blue-500 text-white text-sm font-medium"
+					>
+						{{ __("Ambil Foto") }}
+					</button>
+					<button
+						v-if="s.photoPreview.value"
+						@click="s.retakePhoto"
+						:disabled="s.membukaKamera.value || s.memprosesFoto.value"
+						class="w-full py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium disabled:opacity-60"
+					>
+						{{ __("Ambil Ulang") }}
 					</button>
 				</div>
+				<button
+					v-if="!s.photoData.value"
+					@click="s.pakaiKameraHP"
+					:disabled="s.memprosesFoto.value"
+					class="text-xs text-blue-600 underline"
+				>
+					{{ __("Gunakan aplikasi kamera HP") }}
+				</button>
 				<span v-if="s.photoStatus.value" class="text-xs text-gray-500 text-center">{{ s.photoStatus.value }}</span>
 			</div>
 
@@ -144,6 +168,7 @@ function bukaModal() {
 }
 
 function tutupModal() {
+	s.stopCamera()
 	modalTerbuka.value = false
 }
 
@@ -199,5 +224,8 @@ const hentikanPendengarAntrean = saatTerkirim((item) => {
 	if (item.jenis === "lembur") reloadLembur()
 })
 
-onBeforeUnmount(() => hentikanPendengarAntrean())
+onBeforeUnmount(() => {
+	hentikanPendengarAntrean()
+	s.stopCamera()
+})
 </script>

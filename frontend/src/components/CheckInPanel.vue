@@ -40,6 +40,7 @@
 		trigger="open-checkin-modal"
 		:initial-breakpoint="1"
 		:breakpoints="[0, 1]"
+		@didDismiss="stopCamera"
 	>
 		<div class="h-120 w-full flex flex-col items-center justify-center gap-5 p-4 mb-5">
 			<div class="flex flex-col gap-1.5 mt-2 items-center justify-center">
@@ -91,7 +92,16 @@
 					class="w-full max-w-xs rounded-lg border"
 					style="max-height: 200px; object-fit: cover"
 				/>
-				<!-- X-Sha: selfie lewat aplikasi kamera bawaan HP -->
+				<!-- X-Sha: default kamera di aplikasi; kamera bawaan HP hanya opsi bila bermasalah -->
+				<video
+					v-show="cameraActive && !photoPreview"
+					ref="videoRef"
+					autoplay
+					playsinline
+					muted
+					class="w-full max-w-xs rounded-lg border"
+					style="max-height: 200px; object-fit: cover; transform: scaleX(-1)"
+				></video>
 				<input
 					ref="inputFotoRef"
 					type="file"
@@ -100,25 +110,39 @@
 					style="display: none"
 					@change="onFotoDipilih"
 				/>
-
 				<div class="flex gap-2 w-full">
 					<button
-						v-if="!photoPreview"
-						@click="ambilFoto"
-						:disabled="memprosesFoto"
-						class="w-full py-2 rounded-lg bg-blue-500 text-white text-sm font-medium disabled:opacity-60"
-					>
-						📷 {{ memprosesFoto ? __("Memproses foto...") : __("Ambil Foto") }}
-					</button>
-					<button
-						v-else
-						@click="ambilFoto"
-						:disabled="memprosesFoto"
+						v-if="!cameraActive && !photoPreview"
+						@click="openCamera"
+						:disabled="membukaKamera || memprosesFoto"
 						class="w-full py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium disabled:opacity-60"
 					>
-						🔄 {{ memprosesFoto ? __("Memproses foto...") : __("Foto Ulang") }}
+						{{ memprosesFoto ? __("Memproses foto…") : membukaKamera ? __("Membuka kamera…") : __("Buka Kamera") }}
+					</button>
+					<button
+						v-if="cameraActive && !photoPreview"
+						@click="capturePhoto"
+						class="w-full py-2 rounded-lg bg-blue-500 text-white text-sm font-medium"
+					>
+						{{ __("Ambil Foto") }}
+					</button>
+					<button
+						v-if="photoPreview"
+						@click="retakePhoto"
+						:disabled="membukaKamera || memprosesFoto"
+						class="w-full py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium disabled:opacity-60"
+					>
+						{{ __("Ambil Ulang") }}
 					</button>
 				</div>
+				<button
+					v-if="!photoData"
+					@click="pakaiKameraHP"
+					:disabled="memprosesFoto"
+					class="text-xs text-blue-600 underline"
+				>
+					{{ __("Gunakan aplikasi kamera HP") }}
+				</button>
 
 				<span v-if="photoStatus" class="text-xs text-gray-500 text-center">{{ photoStatus }}</span>
 			</div>
@@ -143,7 +167,7 @@ import { antrean, itemMenunggu, kirimAtauSimpan, saatTerkirim } from "@/offline/
 import { computed, inject, ref, onMounted, onBeforeUnmount } from "vue"
 import { IonModal, modalController, alertController } from "@ionic/vue"
 import { formatTimestamp } from "@/utils/formatters"
-import { bukaKameraHP, prosesFotoKamera } from "@/composables/kameraHP"
+import { buatSelfie } from "@/composables/kameraHP"
 
 const DOCTYPE = "Employee Checkin"
 
@@ -151,6 +175,28 @@ const socket = inject("$socket")
 const employee = inject("$employee")
 const dayjs = inject("$dayjs")
 const __ = inject("$translate")
+
+// X-Sha: selfie lewat kamera di aplikasi; kamera bawaan HP sebagai opsi (composables/kameraHP.js).
+// A07/A09: foto tidak di-upload saat diambil. Foto disimpan di memori dan dikirim
+// bersama check-in saat Confirm, lalu server menyimpannya sebagai file private.
+// A08: foto gelap / kamera tertutup ditolak.
+const {
+	videoRef,
+	inputFotoRef,
+	cameraActive,
+	membukaKamera,
+	memprosesFoto,
+	photoPreview,
+	photoData,
+	photoStatus,
+	openCamera,
+	capturePhoto,
+	retakePhoto,
+	stopCamera,
+	pakaiKameraHP,
+	onFotoDipilih,
+	resetFoto,
+} = buatSelfie(__)
 const checkinTimestamp = ref(null)
 const latitude = ref(0)
 const longitude = ref(0)
@@ -158,11 +204,6 @@ const locationStatus = ref("")
 const locationHelp = ref("")
 const locationState = ref("idle") // idle | locating | ready | error
 
-const inputFotoRef = ref(null)
-const memprosesFoto = ref(false)
-const photoPreview = ref(null)
-const photoData = ref(null)
-const photoStatus = ref("")
 
 const settings = createResource({
 	url: "hrms.api.get_hr_settings",
@@ -288,35 +329,9 @@ const fetchLocation = () => {
 
 const handleEmployeeCheckin = () => {
 	checkinTimestamp.value = dayjs().format("YYYY-MM-DD HH:mm:ss")
-	photoPreview.value = null
-	photoData.value = null
-	photoStatus.value = ""
+	resetFoto()
 	locationState.value = "idle"
 	if (geolocationRequired.value) fetchLocation()
-}
-
-// X-Sha: selfie lewat kamera bawaan HP (lihat composables/kameraHP.js).
-// A07/A09: foto tidak di-upload saat diambil. Foto disimpan di memori dan dikirim
-// bersama check-in saat Confirm, lalu server menyimpannya sebagai file private.
-// A08: foto gelap / kamera tertutup ditolak.
-function ambilFoto() {
-	photoStatus.value = ""
-	bukaKameraHP(inputFotoRef.value)
-}
-
-async function onFotoDipilih(event) {
-	const file = event.target.files?.[0]
-	if (!file) return
-	memprosesFoto.value = true
-	try {
-		const hasil = await prosesFotoKamera(file, __)
-		photoPreview.value = hasil.preview || null
-		photoData.value = hasil.ok ? hasil.dataUrl : null
-		photoStatus.value = hasil.pesan || ""
-	} finally {
-		memprosesFoto.value = false
-		event.target.value = ""
-	}
 }
 
 const mengirim = ref(false)
@@ -436,6 +451,7 @@ const submitLog = async (logType) => {
 	}
 
 	if (hasil.ok || hasil.tersimpan) {
+		stopCamera()
 		modalController.dismiss()
 	}
 	if (hasil.ok) {
@@ -480,6 +496,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+	stopCamera()
 	hentikanPendengarAntrean()
 	socket.emit("doctype_unsubscribe", DOCTYPE)
 	socket.off("list_update")
