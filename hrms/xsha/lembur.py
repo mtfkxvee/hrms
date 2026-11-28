@@ -28,6 +28,7 @@ from frappe.utils import (
 	cint,
 	flt,
 	get_datetime,
+	get_fullname,
 	getdate,
 	now_datetime,
 	nowdate,
@@ -645,14 +646,47 @@ def catat_selesai(name: str, sekarang, latitude=None, longitude=None, photo=None
 	return hasil
 
 
+def _jam_manual_ke_datetime(dasar: datetime.datetime, jam) -> datetime.datetime:
+	"""Jam (HH:MM) pada tanggal `dasar`; kalau jamnya lebih awal dari `dasar`, berarti lewat tengah malam."""
+	hasil = datetime.datetime.combine(dasar.date(), datetime.time()) + _as_timedelta(jam)
+	if hasil < dasar:
+		hasil += datetime.timedelta(days=1)
+	return hasil
+
+
+def _isi_realisasi_manual(doc, jam_mulai_manual, jam_selesai_manual):
+	"""Karyawan tidak menekan Mulai/Selesai di aplikasi: atasan/HRD mengisi jam lembur sebenarnya."""
+	if not jam_mulai_manual or not jam_selesai_manual:
+		frappe.throw(_("The employee did not record this overtime. Enter the actual start and end time."))
+	rencana_mulai, rencana_selesai = rentang_rencana(doc.tanggal, doc.jam_mulai, doc.jam_selesai)
+	# selama jadwal SPL belum lewat, karyawan masih bisa menekan Mulai sendiri
+	if now_datetime() < rencana_selesai:
+		frappe.throw(_("The overtime schedule has not ended yet. Confirm it after {0}.").format(rencana_selesai.strftime("%d-%m-%Y %H:%M")))
+	# jam mulai dihitung dari 12 jam sebelum jam mulai rencana, supaya lembur lewat tengah malam
+	# (mis. rencana 22.00, mulai sebenarnya 00.10) jatuh di tanggal yang benar
+	mulai = _jam_manual_ke_datetime(rencana_mulai - datetime.timedelta(hours=12), jam_mulai_manual)
+	selesai = _jam_manual_ke_datetime(mulai + datetime.timedelta(minutes=1), jam_selesai_manual)
+	if selesai - mulai > datetime.timedelta(hours=12):
+		frappe.throw(_("Check the start and end time: the end time must be after the start time."))
+	if selesai > now_datetime():
+		frappe.throw(_("End time cannot be in the future."))
+	doc.mulai_lembur = mulai
+	_isi_realisasi(doc, selesai)
+	doc.selesai_diisi_manual = 1
+	doc.flags.realisasi_manual = f"{mulai.strftime('%H:%M')} - {selesai.strftime('%H:%M')}"
+
+
 @frappe.whitelist(methods=["POST"])
-def konfirmasi(name: str, jam_selesai_manual=None):
-	"""Atasan/HRD mengonfirmasi realisasi. Jika karyawan lupa menekan Selesai, isi jam selesai manual."""
-	doc = _ambil(name, ("Pending Confirmation", "In Progress"))
+def konfirmasi(name: str, jam_selesai_manual=None, jam_mulai_manual=None):
+	"""Atasan/HRD mengonfirmasi realisasi. Jika karyawan lupa menekan Selesai, isi jam selesai manual.
+	Jika karyawan sama sekali tidak menekan Mulai (status masih Approved), isi jam mulai dan selesai."""
+	doc = _ambil(name, ("Pending Confirmation", "In Progress", "Approved"))
 	_bukan_pemohon(doc, _("confirm"))
 	_wajib_atasan(doc)
 
-	if doc.status == "In Progress":
+	if doc.status == "Approved":
+		_isi_realisasi_manual(doc, jam_mulai_manual, jam_selesai_manual)
+	elif doc.status == "In Progress":
 		if not jam_selesai_manual:
 			frappe.throw(_("The employee has not ended the overtime. Enter the end time."))
 		selesai = datetime.datetime.combine(getdate(doc.mulai_lembur), datetime.time()) + _as_timedelta(
@@ -670,6 +704,13 @@ def konfirmasi(name: str, jam_selesai_manual=None):
 	if pjk_masuk:
 		doc.status_pjk = "Added to Balance"
 	hasil = _simpan(doc, "konfirmasi")
+	if doc.flags.realisasi_manual:
+		doc.add_comment(
+			"Info",
+			_("Employee did not record this overtime in the app. Actual hours entered by {0}: {1}").format(
+				get_fullname(frappe.session.user), doc.flags.realisasi_manual
+			),
+		)
 	if pjk_masuk:
 		from hrms.hr.doctype.pjk_balance.pjk_balance import ubah_saldo_pjk
 
@@ -806,7 +847,12 @@ def get_info_persetujuan(name: str) -> dict:
 		"bisa_setujui_hrd": doc.status == "Pending HR" and hr,
 		"bisa_ubah_ke_berbayar": doc.status == "Pending HR" and hr,
 		"bisa_tolak": (doc.status == "Pending Supervisor" and atasan_atau_hr) or (doc.status == "Pending HR" and hr),
-		"bisa_konfirmasi": doc.status in ("Pending Confirmation", "In Progress") and atasan_atau_hr,
+		"bisa_konfirmasi": atasan_atau_hr
+		and (
+			doc.status in ("Pending Confirmation", "In Progress")
+			# karyawan tidak menekan Mulai: bisa dikonfirmasi manual setelah jadwal SPL lewat
+			or (doc.status == "Approved" and now_datetime() >= rentang_rencana(doc.tanggal, doc.jam_mulai, doc.jam_selesai)[1])
+		),
 		"bisa_batalkan": doc.status in ("Pending Supervisor", "Pending HR", "Approved") and (pemohon or _is_hr(user)),
 		"saldo_pjk": get_saldo_pjk(doc.employee, exclude=doc.name) if atasan_atau_hr else None,
 	}

@@ -55,6 +55,21 @@
 				<input type="time" v-model="jamSelesaiManual" class="w-full rounded border-gray-300 text-base" />
 			</div>
 
+			<!-- Konfirmasi: karyawan tidak menekan Mulai/Selesai sama sekali -->
+			<div v-if="info.data?.bisa_konfirmasi && d.status === 'Approved' && !modeTolak" class="flex flex-col gap-2 border-t pt-4">
+				<label class="text-sm text-gray-600">{{ __("The employee did not record this overtime in the app. Enter the actual hours:") }}</label>
+				<div class="flex flex-row gap-3">
+					<div class="flex-1 flex flex-col gap-1">
+						<span class="text-xs text-gray-500">{{ __("Start") }}</span>
+						<input type="time" v-model="jamMulaiManual" class="w-full rounded border-gray-300 text-base" />
+					</div>
+					<div class="flex-1 flex flex-col gap-1">
+						<span class="text-xs text-gray-500">{{ __("End") }}</span>
+						<input type="time" v-model="jamSelesaiManual" class="w-full rounded border-gray-300 text-base" />
+					</div>
+				</div>
+			</div>
+
 			<!-- Alasan penolakan -->
 			<div v-if="modeTolak" class="flex flex-col gap-2 border-t pt-4">
 				<label class="text-sm text-gray-600">{{ __("Rejection Reason") }}</label>
@@ -123,6 +138,7 @@ const props = defineProps({
 const API = "hrms.xsha.lembur."
 const kompensasi = ref("")
 const jamSelesaiManual = ref("")
+const jamMulaiManual = ref("")
 const modeTolak = ref(false)
 const alasanTolak = ref("")
 const yakinBatal = ref(false)
@@ -140,6 +156,11 @@ const info = createResource({
 const aksiLoading = ref(false)
 
 const d = computed(() => doc.data || {})
+// "9:00:00" dari server -> "09:00" untuk <input type="time">
+const keInputJam = (v) => {
+	const [h, m] = String(v || "").split(":")
+	return h ? `${h.padStart(2, "0")}:${(m || "00").padStart(2, "0")}` : ""
+}
 const formatTgl = (v) => (v ? dayjs(v).format("ddd, D MMM YYYY") : "")
 const formatWaktu = (v) => (v ? dayjs(v).format("D MMM, HH.mm") : "")
 
@@ -147,6 +168,11 @@ watch(
 	() => doc.data,
 	(v) => {
 		if (v && !kompensasi.value) kompensasi.value = v.kompensasi || ""
+		// lembur yang tidak dicatat karyawan: isi awal = jam rencana, atasan tinggal menyesuaikan
+		if (v?.status === "Approved" && !jamMulaiManual.value) {
+			jamMulaiManual.value = keInputJam(v.jam_mulai)
+			jamSelesaiManual.value = keInputJam(v.jam_selesai)
+		}
 	}
 )
 
@@ -218,7 +244,11 @@ function setujui() {
 }
 
 function konfirmasi() {
-	kirim("konfirmasi", d.value.status === "In Progress" ? { jam_selesai_manual: jamSelesaiManual.value } : {})
+	if (d.value.status === "Approved") {
+		kirim("konfirmasi", { jam_mulai_manual: jamMulaiManual.value, jam_selesai_manual: jamSelesaiManual.value })
+	} else {
+		kirim("konfirmasi", d.value.status === "In Progress" ? { jam_selesai_manual: jamSelesaiManual.value } : {})
+	}
 }
 
 function batalkan() {
